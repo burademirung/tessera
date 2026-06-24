@@ -1,0 +1,8 @@
+node_modules/
+dist/
+.env
+*.tfstate*
+.terraform/
+target/
+cdk.out/
+.dev.vars
