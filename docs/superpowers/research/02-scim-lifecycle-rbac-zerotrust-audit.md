@@ -1,0 +1,29 @@
+# Control Plane — SCIM, JML Lifecycle, RBAC/ABAC, Zero Trust, Audit (2024–2026)
+
+Target: native Go control plane orchestrator + Rust edge SCIM endpoint; D1/DO state; R2 audit; OPA RBAC/ABAC.
+
+## Top corrections
+1. **Deprovisioning ≠ `active=false`.** It blocks the next login but leaves live sessions/refresh tokens valid. Leaver MUST be a saga: disable → revoke OAuth grant/refresh (RFC 7009) → terminate sessions (OIDC Back-Channel Logout) → revoke API keys.
+2. **Authorize per-request, not per-session** (Zero Trust #3/#6). Never cache an allow decision for a session.
+3. **PATCH is the top SCIM risk** — one generic PATCH engine over a canonical attribute tree; atomicity from DO serialized apply + conditional `storage.put`.
+4. **R2 locks are WORM-style but NOT S3 Compliance mode** — add hash chaining + signed Merkle checkpoints.
+5. **Go RBAC role-centric** — ABAC may only narrow, never expand.
+6. **NHIs need their own lifecycle** — human leaver fans out to transfer/rotate owned NHIs.
+
+## 1. SCIM 2.0
+RFC 7642/7643/7644 (2015, current). Endpoints `/Users`,`/Groups`,`/ServiceProviderConfig`,`/ResourceTypes`,`/Schemas`,`/.search`,`/Me`,`/Bulk`(opt). Static-compile discovery endpoints; skip inbound `/Bulk` initially. Schema: `userName` required+unique; `id` server-owned readOnly; `externalId` client-owned; EnterpriseUser under full URN. TinyGo note moot (Go is native now): model core struct + `map[string]json.RawMessage` for extension namespaces; PATCH/filter over a path-addressable tree. PATCH (§3.5.2): add/replace/remove, case-insensitive `op`, atomic, `replace` may omit `path`, primary=true forces others false, 200+body or 204. Filtering: `eq ne co sw ew pr gt ge lt le` + `and/or/not`; `startIndex` 1-based; stable ordering; real IdPs use `eq`/`and` + value-path. Errors (§3.12): `status` as **string**, scimType `uniqueness`(409)/`mutability`/`invalidFilter`/`invalidPath`/`noTarget`/`invalidSyntax`/`invalidValue`; `application/scim+json`. ServiceProviderConfig: advertise honestly. Deprovision via `active=false` (queryable); re-provision idempotent. Concurrency: DO version → `ETag`+`meta.version`, honor `If-Match`→412; persist `externalId`↔`id`.
+
+## 2. Joiner-Mover-Leaver
+NIST 800-53 r5 AC-2/AC-2(1)/AC-2(4)/AC-2(13), PS-4 ("terminate or revoke authenticators and credentials"), PS-5; ISO 27001:2022 A.5.16 (NHIs)/A.5.18. Joiner: birthright RBAC day-one; privileged JIT + time-boxed; approvals as gated states. Mover (PS-5): recalculate `grant=target−current`, `revoke=current−target`; add-only Mover is a bug; trigger recert. Leaver: SCIM `active=false` ≠ session termination (OWASP ASVS 3.3.1). Three actions: disable (SCIM) → revoke grant/refresh (RFC 7009) → terminate sessions (Back-Channel Logout 1.0). For-cause immediate (<5 min, AC-2(13)); routine at termination via Cron; expose immediate-revoke. NHIs: own type + mandatory owner; reconcile orphaned/dormant.
+
+## 3. Access reviews & certification
+NIST AC-2/AC-5(SoD)/AC-6/AC-6(7); ISO 5.15/5.18/8.2 (reviewer≠implementer); SOC2 CC6.1–6.3 (dated evidence); SOX ITGC. Cadence risk-tiered (privileged monthly/continuous, standard quarterly, low annual, contractors monthly) + event-driven on mover. **Distributed micro-certification** (3–5 items/reviewer/week). Cron enqueues per-identity items; identity DO self-schedules next due date; cadence in D1 policy table. Least privilege: AC-6(7) remove stale; track last-use, pre-populate revoke recs. SoD: Rego matrix, preventive (request-time) + detective (sweeps). Evidence: per-decision R2 object `{campaign,identity,entitlement,reviewer,decision,justification,timestamp,policy_version,control_tags,prior/new}`, Object Lock, hash-chained; tag with frameworks; revocation-reconciliation report. Reviewer routing (manager vs resource owner); OPA enforces reviewer≠grantor.
+
+## 4. RBAC vs ABAC & policy-as-code
+NIST RBAC INCITS 359 (Core/Hierarchical/Constrained; SSD vs DSD); NIST SP 800-162 ABAC (subject/object/action/environment). RBAC simple/auditable but multi-factor-weak; ABAC flexible but harder to audit. Bridge: "a role may be viewed as a subject attribute." **Role-centric RBAC-A**: role = envelope, ABAC narrows; Rego `allow if {role_permits; all abac_constraints}`; `input.subject`(+roles)/`resource`/`action`/`environment`. PEP enforces/PDP decides; bundle API + ETag. Edge: compile to in-process eval (Regorus); roles+tenant attrs = data; allow logic = policy; per-identity dynamic state = `input.environment`.
+
+## 5. NIST SP 800-207 Zero Trust
+SP 800-207 + 800-207A (multi-cloud identity-centric authz). Tenets #3 per-session, #4 dynamic policy, #6 continuous strict pre-access enforcement. PE+PA = PDP; PEP = gatekeeper. Mapping: **PEP = edge Worker** (no policy logic); **PE = Regorus-evaluated bundle**; **PA = Go control plane** (mints/revokes tokens, signs/pushes bundles). Continuous verification = re-evaluate per request with fresh `input.environment`. Decision logging = tenet #7.
+
+## 6. Audit logging
+NIST 800-53 AU family (AU-2/3/9/10/11), SP 800-92, OWASP Logging cheat sheet, CISA M-21-31. Log AU-3 six elements (who/what/when/where/outcome/correlation); identity event types (JML, SCIM ops, grants/revokes, authn success+failure, authz allow/deny+policy id, review decisions, admin actions). D1/DO mutable; **R2 = append-only record of record**. Immutability AU-9: R2 Bucket Locks (WORM-style, not Compliance mode) + hash chaining + signed Merkle checkpoints (Ed25519). Retention AU-11: IAM/reviews are SOX evidence → 7-year floor. Integrity AU-10: per-record `seq`+`record_hash`+`prev_hash`, chain head in per-tenant DO, periodic signed checkpoint, published verifier. Never log passwords/tokens/keys — log id/truncated fingerprint; redact before hash+write; UTC RFC 3339 ms; platform clock for `ingest_time`; keep `event_time` vs `ingest_time` separate.
