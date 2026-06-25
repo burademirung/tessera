@@ -1,86 +1,212 @@
 ---
-// Premium hand-built architecture model (HTML/CSS, token-styled — no Mermaid).
-// Six layers of the engine + the Cloudflare resource map, sourced from
-// ARCHITECTURE.md §1 and §8. Legible, labeled, responsive.
+// Premium hand-built system map (HTML/CSS, token-styled — no Mermaid).
+// Faithful to the README architecture graph: external IdP + the Cloudflare
+// edge/storage planes, the Go control plane, IaC, and keyless multi-cloud
+// federation — laid out as labeled planes with real, legible flow.
 
-const layers = [
-  { n: '01', name: 'Edge Identity Engine', tech: 'Rust → WASM', role: 'The PEP for the whole system: OIDC RP + IdP, OAuth 2.1, DPoP, SCIM 2.0, opaque sessions.' },
-  { n: '02', name: 'Policy-as-Code', tech: 'OPA · Rego v1 · Regorus', role: 'Rego authored + opa-tested, evaluated in-process at the edge by pure-Rust Regorus. Fail-closed.' },
-  { n: '03', name: 'Control Plane', tech: 'native Go', role: 'JML state machines, offboarding saga, access-review campaigns, federation orchestration — real cloud SDKs.' },
-  { n: '04', name: 'Multi-cloud Federation', tech: 'Terraform · AWS CDK', role: 'Keyless trust into AWS · Azure · GCP. Three thin per-cloud modules + one AWS app slice. All ephemeral.' },
-  { n: '05', name: 'Site + Live 3D', tech: 'Astro · R3F', role: 'Static-first HTML; one capability-gated island streams live telemetry (SSE) into the 3D flow graph.' },
-  { n: '06', name: 'CI/CD', tech: 'hardened GitHub Actions', role: 'SHA-pinned, keyless OIDC × 3 clouds, SLSA provenance attested and verified on consume.' },
+type Chip = { name: string; role?: string; cloud?: boolean };
+
+const edge: Chip[] = [
+  { name: 'OIDC RP', role: 'PKCE · iss-param · mix-up defense' },
+  { name: 'OIDC IdP', role: 'dual-alg JWKS — EdDSA + RS256' },
+  { name: 'OAuth 2.1', role: 'DPoP · introspect · revoke' },
+  { name: 'SCIM 2.0', role: 'service provider (Okta + Entra)' },
+  { name: 'Regorus', role: 'Rego v1 eval — RBAC-A + ABAC' },
+  { name: 'Telemetry', role: 'Queue producer' },
 ];
-
-const resources = [
-  { p: 'Workers', d: 'Edge engine + SCIM + OIDC IdP (single Rust/WASM Worker)' },
-  { p: 'Durable Objects', d: 'Single-writer sessions, audit-chain head, telemetry aggregator' },
-  { p: 'D1', d: 'Identity graph: identity, role, entitlement, review tables' },
-  { p: 'KV', d: 'JWKS / discovery cache — read-only, single-flight refresh' },
-  { p: 'R2', d: 'WORM audit log (hash-chained) + signed policy bundles + TF state' },
-  { p: 'Queues', d: 'Telemetry fan-in + decision-log writes (fail-open)' },
-  { p: 'Pages', d: 'Static-first site hosting, prerendered per route' },
+const bindings: Chip[] = [
+  { name: 'Durable Objects', role: 'sessions · aggregator · audit head' },
+  { name: 'D1', role: 'identity graph / relational state' },
+  { name: 'KV', role: 'JWKS / discovery cache' },
+  { name: 'R2', role: 'audit WORM + signed bundles' },
+  { name: 'Queues', role: 'async jobs / telemetry fan-in' },
+];
+const control: Chip[] = [
+  { name: 'JML state machines', role: 'Joiner / Mover / Leaver saga' },
+  { name: 'Access-review campaigns' },
+  { name: 'Federation orchestration', role: 'STS · WIF · FIC' },
+  { name: 'Policy admin', role: 'signs + pushes bundles to R2' },
+];
+const iac: Chip[] = [
+  { name: 'Terraform', role: 'aws-oidc-trust · gcp-wif · azure-fic' },
+  { name: 'AWS CDK', role: 'AccessReview + Reaper stacks' },
+];
+const clouds: Chip[] = [
+  { name: 'AWS STS', cloud: true },
+  { name: 'GCP Workload Identity', cloud: true },
+  { name: 'Azure FIC', cloud: true },
 ];
 ---
-<div class="arch">
-  <div class="arch__layers">
-    {layers.map((l) => (
-      <div class="arch__layer tile">
-        <span class="arch__num">{l.n}</span>
-        <div class="arch__layerbody">
-          <div class="arch__layerhead">
-            <h3 class="arch__name">{l.name}</h3>
-            <span class="arch__tech token">{l.tech}</span>
-          </div>
-          <p class="arch__role">{l.role}</p>
-        </div>
-      </div>
-    ))}
+<div class="sys">
+  <!-- Ingress: external identity + the user-facing site -->
+  <div class="sys__row2">
+    <section class="sys__plane tile">
+      <header class="sys__head">
+        <span class="sys__mark" aria-hidden="true"></span>
+        <h3 class="sys__zone">External IdP</h3>
+        <span class="sys__tech token">Okta / Entra</span>
+      </header>
+      <p class="sys__lead">Workforce identity source — brokered, never trusted blindly.</p>
+    </section>
+    <section class="sys__plane tile">
+      <header class="sys__head">
+        <span class="sys__mark" aria-hidden="true"></span>
+        <h3 class="sys__zone">Cloudflare Pages</h3>
+        <span class="sys__tech token">Astro · R3F</span>
+      </header>
+      <p class="sys__lead">Static-first site; one capability-gated island streams live telemetry into the 3D graph (SVG fallback).</p>
+    </section>
   </div>
 
-  <aside class="arch__cf tile" aria-label="Cloudflare resource map">
-    <p class="eyebrow arch__cfhead">CLOUDFLARE RESOURCE MAP</p>
-    <dl class="arch__res">
-      {resources.map((r) => (
-        <div class="arch__resrow">
-          <dt class="token">{r.p}</dt>
-          <dd>{r.d}</dd>
-        </div>
+  <p class="sys__flow"><span>OIDC PKCE · SCIM push</span><span>SSE telemetry · trigger demo ⇅</span></p>
+
+  <!-- The edge engine: every request's policy enforcement point -->
+  <section class="sys__plane sys__plane--hub tile">
+    <header class="sys__head">
+      <span class="sys__mark sys__mark--hub" aria-hidden="true"></span>
+      <h3 class="sys__zone">Cloudflare Workers — Edge Identity Engine</h3>
+      <span class="sys__tech token">Rust → WASM</span>
+    </header>
+    <ul class="sys__chips">
+      {edge.map((c) => (
+        <li class="sys__chip">
+          <span class="sys__chipname">{c.name}</span>
+          {c.role && <span class="sys__chiprole">{c.role}</span>}
+        </li>
       ))}
-    </dl>
-    <p class="arch__note">All cloud infra is provisioned keylessly from CI and destroyed after each run; a tag-scoped reaper backstops orphans.</p>
-  </aside>
+    </ul>
+  </section>
+
+  <p class="sys__flow"><span>binds state ▾</span></p>
+
+  <!-- Stateful Cloudflare primitives the Worker drives -->
+  <section class="sys__plane tile">
+    <header class="sys__head">
+      <span class="sys__mark" aria-hidden="true"></span>
+      <h3 class="sys__zone">Cloudflare Bindings</h3>
+    </header>
+    <ul class="sys__chips">
+      {bindings.map((c) => (
+        <li class="sys__chip">
+          <span class="sys__chipname">{c.name}</span>
+          {c.role && <span class="sys__chiprole">{c.role}</span>}
+        </li>
+      ))}
+    </ul>
+  </section>
+
+  <p class="sys__flow"><span>control plane drives lifecycle &amp; federation ▾</span></p>
+
+  <!-- Out-of-band orchestration in Go -->
+  <section class="sys__plane tile">
+    <header class="sys__head">
+      <span class="sys__mark" aria-hidden="true"></span>
+      <h3 class="sys__zone">Control Plane</h3>
+      <span class="sys__tech token">native Go · Actions Cron</span>
+    </header>
+    <ul class="sys__chips">
+      {control.map((c) => (
+        <li class="sys__chip">
+          <span class="sys__chipname">{c.name}</span>
+          {c.role && <span class="sys__chiprole">{c.role}</span>}
+        </li>
+      ))}
+    </ul>
+  </section>
+
+  <p class="sys__flow"><span>RS256 token → keyless trust ▾</span></p>
+
+  <!-- IaC provisions the trust; clouds are the federation targets -->
+  <div class="sys__row2 sys__row2--fed">
+    <section class="sys__plane tile">
+      <header class="sys__head">
+        <span class="sys__mark" aria-hidden="true"></span>
+        <h3 class="sys__zone">Infrastructure as Code</h3>
+      </header>
+      <ul class="sys__chips">
+        {iac.map((c) => (
+          <li class="sys__chip">
+            <span class="sys__chipname">{c.name}</span>
+            {c.role && <span class="sys__chiprole">{c.role}</span>}
+          </li>
+        ))}
+      </ul>
+    </section>
+    <section class="sys__plane sys__plane--clouds tile">
+      <header class="sys__head">
+        <span class="sys__mark sys__mark--gold" aria-hidden="true"></span>
+        <h3 class="sys__zone">Multi-Cloud Federation</h3>
+        <span class="sys__tech token sys__tech--gold">keyless · ephemeral</span>
+      </header>
+      <ul class="sys__chips sys__chips--cloud">
+        {clouds.map((c) => (
+          <li class="sys__chip sys__chip--cloud">
+            <span class="sys__chipname">{c.name}</span>
+          </li>
+        ))}
+      </ul>
+    </section>
+  </div>
+
+  <p class="sys__note">
+    Every cloud credential is minted just-in-time from CI and destroyed after each run;
+    a tag-scoped reaper backstops orphans. No long-lived secrets cross any boundary.
+  </p>
 </div>
+
 <style>
-  .arch { display: grid; gap: var(--space-4); grid-template-columns: 1fr; }
-  @media (min-width: 920px) { .arch { grid-template-columns: 1.55fr 1fr; align-items: start; } }
+  .sys { display: grid; gap: var(--space-2); }
 
-  .arch__layers { display: grid; gap: var(--space-2); }
-  .arch__layer { display: flex; gap: var(--space-3); padding: var(--space-3); align-items: flex-start; position: relative; }
-  .arch__layer::before {
-    /* flowing lapis spine connecting the layers */
-    content: ''; position: absolute; left: 31px; top: 100%; width: 2px; height: var(--space-2);
-    background: linear-gradient(var(--lapis), transparent);
-  }
-  .arch__layer:last-child::before { display: none; }
-  /* Ink number for AA; the gold ring/border carries the mosaic accent. */
-  .arch__num {
-    flex: none; font-family: var(--font-mono); font-size: 0.82rem; font-weight: 600;
-    color: var(--ink); width: 32px; height: 32px; display: grid; place-items: center;
-    border: 1.5px solid var(--gold); border-radius: 6px; background: var(--paper);
-  }
-  .arch__layerhead { display: flex; flex-wrap: wrap; align-items: baseline; gap: 10px; }
-  .arch__name { font-size: 1.05rem; margin: 0; }
-  .arch__tech { color: var(--lapis); }
-  .arch__role { margin: 6px 0 0; color: var(--muted); font-size: 0.92rem; line-height: 1.5; max-width: none; }
+  .sys__row2 { display: grid; gap: var(--space-2); grid-template-columns: 1fr; }
+  @media (min-width: 760px) { .sys__row2 { grid-template-columns: 1fr 1fr; } }
 
-  .arch__cf { padding: var(--space-4); position: sticky; top: 64px; }
-  .arch__cfhead { margin-bottom: var(--space-3); }
-  .arch__res { margin: 0; display: grid; gap: 0; }
-  .arch__resrow { padding: var(--space-2) 0; border-bottom: 1px solid var(--line); }
-  .arch__resrow:first-child { padding-top: 0; }
-  .arch__res dt { color: var(--lapis); margin-bottom: 3px; }
-  .arch__res dd { margin: 0; color: var(--muted); font-size: 0.88rem; line-height: 1.45; }
-  .arch__note { margin: var(--space-3) 0 0; font-size: 0.84rem; color: var(--muted); line-height: 1.5; }
-  @media (max-width: 919px) { .arch__cf { position: static; } }
+  .sys__plane { padding: var(--space-3); }
+  /* The edge engine is the hub — a gold rule marks the one engine every flow crosses. */
+  .sys__plane--hub { border-left: 3px solid var(--gold); background: linear-gradient(var(--gold-soft), transparent 60%), var(--paper-2); }
+
+  .sys__head { display: flex; flex-wrap: wrap; align-items: baseline; gap: 10px; margin-bottom: var(--space-2); }
+  .sys__zone { font-size: 1.02rem; margin: 0; font-family: var(--font-sans); font-weight: 600; letter-spacing: -0.01em; }
+  .sys__tech { color: var(--lapis); }
+  .sys__tech--gold { color: var(--muted); }
+  .sys__mark { width: 9px; height: 9px; flex: none; border-radius: 2px; transform: rotate(45deg); background: var(--lapis); align-self: center; }
+  .sys__mark--hub { background: var(--gold); }
+  .sys__mark--gold { background: var(--gold); }
+  .sys__lead { margin: 0; color: var(--muted); font-size: 0.9rem; line-height: 1.5; max-width: none; }
+
+  .sys__chips { list-style: none; margin: 0; padding: 0; display: grid; gap: 8px; grid-template-columns: repeat(auto-fill, minmax(190px, 1fr)); }
+  .sys__chips--cloud { grid-template-columns: repeat(auto-fill, minmax(150px, 1fr)); }
+  .sys__chip {
+    display: flex; flex-direction: column; gap: 2px;
+    padding: 9px 12px; border-radius: var(--radius-sm);
+    background: var(--paper); border: 1px solid var(--line); border-left: 2px solid var(--lapis);
+  }
+  .sys__chip--cloud { border-left-color: var(--gold); align-items: center; text-align: center; justify-content: center; }
+  .sys__chipname { font-family: var(--font-mono); font-size: 0.8rem; color: var(--ink); font-weight: 500; }
+  .sys__chiprole { font-size: 0.74rem; color: var(--muted); line-height: 1.35; }
+
+  /* Flow connectors between planes */
+  .sys__flow {
+    display: flex; justify-content: center; flex-wrap: wrap; gap: 8px var(--space-3);
+    margin: 0; padding: 2px 0;
+  }
+  .sys__flow span {
+    font-family: var(--font-mono); font-size: 0.68rem; letter-spacing: 0.08em;
+    text-transform: uppercase; color: var(--muted);
+    display: inline-flex; align-items: center; gap: 7px;
+  }
+  .sys__flow span::before {
+    content: ''; width: 6px; height: 6px; border-radius: 50%;
+    background: var(--lapis); flex: none;
+  }
+
+  .sys__row2--fed { position: relative; align-items: stretch; }
+  /* On wide screens, a connector implies IaC + control → clouds. */
+  @media (min-width: 760px) {
+    .sys__row2--fed .sys__plane:first-child::after {
+      content: '→'; position: absolute; left: calc(50% - 9px); top: 50%;
+      transform: translateY(-50%); color: var(--lapis); font-size: 1.1rem; font-weight: 600;
+    }
+  }
+
+  .sys__note { margin: var(--space-2) 0 0; font-size: 0.84rem; color: var(--muted); line-height: 1.55; max-width: none; }
 </style>
