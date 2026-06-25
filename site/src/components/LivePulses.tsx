@@ -8,10 +8,10 @@ import { dampScalar, decayTarget, isAnimating } from '../lib/anim';
 import { useTelemetryStore } from '../lib/telemetry-store';
 
 const PULSE_DECAY = 3; // lambda — keeps a single pulse to one fade (≤3 flashes/sec).
-// Only ACTIVE/flowing edges + the primary CTA may use the accent (#3B5BDB).
-const ACCENT = new THREE.Color('#3B5BDB');
-// Idle edges stay neutral.
-const REST = new THREE.Color('#E6E6EC');
+// Only ACTIVE/flowing edges + the primary CTA may use the lapis accent (#2740C8).
+const ACCENT = new THREE.Color('#2740C8');
+// Idle edges stay neutral grout.
+const REST = new THREE.Color('#E4E1D8');
 
 // drei <Line> renders a Line2 whose `.material` is a LineMaterial (color is a
 // THREE.Color, opacity/transparent are mutable per frame). We reference it
@@ -82,7 +82,7 @@ export default function LivePulses({ lite = false }: { lite?: boolean }) {
         <Line
           key={e.id}
           points={[positions[idx[e.from]], positions[idx[e.to]]]}
-          color="#E6E6EC"
+          color="#E4E1D8"
           lineWidth={lite ? 2 : 3}
           ref={(l) => {
             lineRefs.current[i] = (l as unknown as LineLike) ?? null;

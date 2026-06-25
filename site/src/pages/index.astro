@@ -2,48 +2,720 @@
 export const prerender = true;
 import Base from '../layouts/Base.astro';
 import { IdentityGraph } from '../components/IdentityGraph';
+import ArchitectureDiagram from '../components/ArchitectureDiagram.astro';
+import SequenceDiagram from '../components/SequenceDiagram.astro';
+import CodeBlock from '../components/CodeBlock.astro';
+import TechnologySection from '../components/TechnologySection.astro';
+import StandardsList from '../components/StandardsList.astro';
+import BestPracticesList from '../components/BestPracticesList.astro';
+import { getCollection, render } from 'astro:content';
+
+const techsRaw = (await getCollection('technologies')).sort(
+  (a, b) => a.data.order - b.data.order,
+);
+// Pre-render the MDX body for each technology (inline deep-dives).
+const techs = await Promise.all(
+  techsRaw.map(async (t) => ({ entry: t, Content: (await render(t)).Content })),
+);
+const bpTotal = techsRaw.reduce((n, t) => n + t.data.bestPractices.length, 0);
+
+// ── STACK ────────────────────────────────────────────────────────────────
+const stack = [
+  { name: 'Go', role: 'Native control plane — JML lifecycle, offboarding saga, real cloud SDKs.' },
+  { name: 'Rust → WASM', role: 'The edge identity engine, compiled to wasm32 on Cloudflare Workers.' },
+  { name: 'Terraform', role: 'Three per-cloud trust modules; state on R2 with the native lockfile.' },
+  { name: 'AWS CDK', role: 'The one AWS access-review slice; cdk-nag v3, RemovalPolicy.DESTROY.' },
+  { name: 'OPA / Regorus', role: 'Rego v1 policy, opa-tested; evaluated in-process at the edge, fail-closed.' },
+  { name: 'Cloudflare Workers', role: 'Edge compute + DO + D1 + KV + R2 + Queues — the whole platform.' },
+  { name: 'OIDC / SAML', role: 'RP to Okta + Entra; a real OIDC IdP the clouds trust. SAML brokered.' },
+  { name: 'SCIM 2.0', role: 'A service provider that absorbs both Okta and Entra PATCH dialects.' },
+  { name: 'OAuth 2.1 · PKCE · DPoP', role: 'The stricter bar: PKCE everywhere, exact redirects, sender-constrained tokens.' },
+  { name: 'JWT (JOSE)', role: 'One key, one alg, explicit allow-list; token key-URLs ignored (anti-SSRF).' },
+  { name: 'Workload Identity Federation', role: 'Keyless AWS/Azure/GCP — a distinct RS256 token per cloud, exact aud + sub.' },
+  { name: 'Astro · R3F', role: 'Static-first site + one live 3D telemetry island over SSE.' },
+];
+
+// ── USAGE — copy-pasteable, real (docs/API.md). Host = the OIDC issuer. ─────
+const HOST = 'https://idp.lifecycle.example';
+const usage = [
+  {
+    id: 'discovery',
+    title: 'OIDC discovery',
+    note: 'Public, cached 300s. S256 is the only PKCE method advertised; plain is never listed.',
+    req: `curl ${HOST}/.well-known/openid-configuration`,
+    reqLang: 'bash',
+    res: `{
+  "issuer": "${HOST}",
+  "jwks_uri": "${HOST}/jwks",
+  "authorization_endpoint": "${HOST}/authorize",
+  "token_endpoint": "${HOST}/token",
+  "id_token_signing_alg_values_supported": ["EdDSA", "RS256"],
+  "code_challenge_methods_supported": ["S256"],
+  "scopes_supported": ["openid", "profile", "email"]
+}`,
+  },
+  {
+    id: 'jwks',
+    title: 'JWKS (dual key ring)',
+    note: 'EdDSA for internal tokens, RS256 for cloud federation. Private members never served.',
+    req: `curl ${HOST}/jwks`,
+    reqLang: 'bash',
+    res: `{
+  "keys": [
+    { "kty": "OKP", "crv": "Ed25519", "kid": "int-2026-06",   "use": "sig", "x": "<base64url>" },
+    { "kty": "RSA", "alg": "RS256",   "kid": "cloud-2026-06", "use": "sig", "n": "<modulus>", "e": "AQAB" }
+  ]
+}`,
+  },
+  {
+    id: 'authorize',
+    title: 'Authorize (start an OIDC login)',
+    note: 'The Worker generates state, nonce and the PKCE verifier (256-bit CSPRNG) and 302s to the upstream IdP — no caller-supplied params.',
+    req: `curl -i ${HOST}/authorize`,
+    reqLang: 'bash',
+    res: `HTTP/2 302
+location: https://okta.example/oauth2/v1/authorize
+  ?response_type=code&client_id=lifecycle-rp
+  &redirect_uri=${HOST}/callback
+  &scope=openid+profile+email
+  &state=<rnd>&nonce=<rnd>
+  &code_challenge=<S256>&code_challenge_method=S256`,
+  },
+  {
+    id: 'federate',
+    title: 'Mint a per-cloud federation token',
+    note: 'Bearer-gated (constant-time). cloud ∈ {aws,azure,gcp}; the token is an RS256 JWT with the cloud-specific aud and a fixed 900s TTL.',
+    req: `curl -X POST ${HOST}/federate \\
+  -H "authorization: Bearer $FEDERATION_API_TOKEN" \\
+  -H "content-type: application/json" \\
+  -d '{"cloud":"aws","sub":"arn:aws:iam::123456789012:role/lifecycle-worker"}'`,
+    reqLang: 'bash',
+    res: `{ "token": "eyJhbGciOiJSUzI1NiIsImtpZCI6ImNsb3VkLTIwMjYtMDYi...<RS256 JWT>" }`,
+  },
+  {
+    id: 'decision',
+    title: 'Authorization decision (PEP → Regorus)',
+    note: 'HTTP is always 200; the allow boolean is authoritative. Absent/unverified bundle → deny (fail-closed). Callers MUST NOT grant unless allow === true.',
+    req: `curl -X POST ${HOST}/decision \\
+  -H "content-type: application/json" \\
+  -d '{
+        "subject": {"id":"user-123","roles":["reader"],"tenant":"acme","mfa":true},
+        "resource": {"type":"users","tenant":"acme"},
+        "action": "read",
+        "environment": {"maintenance_window": false}
+      }'`,
+    reqLang: 'bash',
+    res: `{ "allow": true, "reason": null }
+// denied:            { "allow": false, "reason": "policy denied" }
+// bundle unavailable: { "allow": false, "reason": "policy unavailable: no bundle" }`,
+  },
+  {
+    id: 'scim',
+    title: 'SCIM provisioning (Okta / Entra)',
+    note: 'Bearer on every /scim/v2/** request, verified constant-time; the resolved tenant is enforced (BOLA — cross-tenant reads 404, not 403). Content-Type application/scim+json.',
+    req: `curl -X POST ${HOST}/scim/v2/Users \\
+  -H "authorization: Bearer $SCIM_BEARER_TOKEN" \\
+  -H "content-type: application/scim+json" \\
+  -d '{
+        "schemas": ["urn:ietf:params:scim:schemas:core:2.0:User"],
+        "userName": "alice@acme.example",
+        "active": true,
+        "externalId": "okta-00u1abc"
+      }'`,
+    reqLang: 'bash',
+    res: `HTTP/2 201
+{
+  "schemas": ["urn:ietf:params:scim:schemas:core:2.0:User"],
+  "id": "2819c223-7f76-453a-919d-413861904646",
+  "userName": "alice@acme.example",
+  "active": true,
+  "externalId": "okta-00u1abc",
+  "meta": { "resourceType": "User", "location": "${HOST}/scim/v2/Users/2819c223-..." }
+}`,
+  },
+];
+
+// ── STANDARDS MAP (docs/STANDARDS.md) ───────────────────────────────────────
+const standardsGroups = [
+  {
+    group: 'OAuth & OIDC',
+    rows: [
+      { s: 'OAuth 2.0', rfc: 'RFC 6749', gov: 'Authorization-code grant, token endpoint, error responses', where: 'edge/rp.rs · edge/lib.rs' },
+      { s: 'OAuth 2.1', rfc: 'draft', gov: 'PKCE mandatory; no implicit/ROPC; exact redirect match', where: 'edge/rp.rs' },
+      { s: 'OAuth Security BCP', rfc: 'RFC 9700', gov: 'Current OAuth security bar (PKCE, sender-constraining, rotation)', where: 'edge/rp.rs · dpop.rs · session_do.rs' },
+      { s: 'PKCE', rfc: 'RFC 7636', gov: 'S256 code challenge; verifier ≥256 bits; anti-downgrade', where: 'edge/rp.rs' },
+      { s: 'DPoP', rfc: 'RFC 9449', gov: 'Sender-constraining via proof-of-possession; cnf.jkt', where: 'edge/dpop.rs' },
+      { s: 'Issuer Identification', rfc: 'RFC 9207', gov: 'iss response param; mix-up defense (Okta + Entra)', where: 'edge/lib.rs /callback' },
+      { s: 'Token Revocation', rfc: 'RFC 7009', gov: 'Refresh-token revocation during offboarding', where: 'control-plane/offboard/saga.go' },
+      { s: 'Token Introspection', rfc: 'RFC 7662', gov: 'Authenticated callers; inactive → {active:false}', where: 'edge/introspect.rs' },
+      { s: 'OIDC Core 1.0', rfc: 'errata 2', gov: 'ID-token validation §3.1.3.7; nonce; UserInfo', where: 'edge/rp.rs · lib.rs' },
+      { s: 'OIDC Discovery 1.0', rfc: '', gov: '/.well-known/openid-configuration; jwks_uri', where: 'edge/discovery.rs' },
+      { s: 'OIDC Back-Channel Logout', rfc: '', gov: 'logout_token; server-initiated session termination', where: 'control-plane/offboard/saga.go' },
+    ],
+  },
+  {
+    group: 'JWT / JOSE',
+    rows: [
+      { s: 'JSON Web Key', rfc: 'RFC 7517', gov: 'JWK structure; use/alg/kid; JWKS format', where: 'edge/jwks.rs' },
+      { s: 'JWK Thumbprint', rfc: 'RFC 7638', gov: 'Canonical thumbprint for cnf.jkt DPoP binding', where: 'edge/dpop.rs' },
+      { s: 'JWT Best Practices', rfc: 'RFC 8725', gov: 'Reject alg:none; explicit allow-list; ignore jku/x5u/jwk', where: 'edge/jwt.rs · ssrf.rs' },
+      { s: 'JWT Access Tokens', rfc: 'RFC 9068', gov: 'typ:at+jwt; local edge validation from cached JWKS', where: 'edge/jwt.rs · lib.rs' },
+    ],
+  },
+  {
+    group: 'SCIM',
+    rows: [
+      { s: 'SCIM Definitions', rfc: 'RFC 7642', gov: 'Concepts; tenant isolation; provisioning model', where: 'control-plane/scim/reconcile.go' },
+      { s: 'SCIM Core Schema', rfc: 'RFC 7643', gov: 'User/Group schema; active, userName, externalId', where: 'edge/scim/model.rs' },
+      { s: 'SCIM Protocol', rfc: 'RFC 7644', gov: 'CRUD; PATCH; filter; pagination; scim+json', where: 'edge/scim/*' },
+    ],
+  },
+  {
+    group: 'SAML',
+    rows: [
+      { s: 'SAML 2.0', rfc: 'OASIS', gov: 'SP-initiated SSO; assertion validation; XSW defense', where: 'brokered (Access / WorkOS); no in-engine XML-DSig' },
+    ],
+  },
+  {
+    group: 'NIST',
+    rows: [
+      { s: 'RBAC', rfc: 'INCITS 359', gov: 'Roles, permissions, sessions, user-role assignment', where: 'policy/authz.rego · domain/identity.go' },
+      { s: 'ABAC', rfc: 'SP 800-162', gov: 'Subject/resource/action/environment; RBAC-A hybrid', where: 'policy/authz.rego' },
+      { s: 'Zero Trust', rfc: 'SP 800-207', gov: 'PEP/PDP/PA; per-request re-evaluation; least privilege', where: 'edge/authz/seam.rs · engine.rs' },
+      { s: 'Security & Privacy Controls', rfc: 'SP 800-53', gov: 'AC / AU / PS families; least privilege; audit; SoD', where: 'control-plane/audit · sod · offboard' },
+    ],
+  },
+  {
+    group: 'ISO / OWASP / Supply chain',
+    rows: [
+      { s: 'ISO/IEC 27001', rfc: '2022', gov: 'Clauses 5.15–5.18: access control, identity, authn, review', where: 'Regorus PEP · JML state machine · sessions' },
+      { s: 'OWASP ASVS', rfc: 'v5.0', gov: 'V6/V7/V8/V9/V10/V11/V16 — authn, session, authz, tokens, crypto, logging', where: 'edge/* · policy/authz.rego' },
+      { s: 'OWASP API Top 10', rfc: '2023', gov: 'BOLA, broken-auth, BFLA, mass-assignment, SSRF', where: 'edge/scim/auth.rs · ssrf.rs' },
+      { s: 'SLSA', rfc: 'L2/L3', gov: 'Build provenance attestation; source integrity', where: '.github/workflows/release.yml' },
+    ],
+  },
+  {
+    group: 'Policy / Accessibility',
+    rows: [
+      { s: 'Rego v1 / OPA 1.0', rfc: 'Jan 2025', gov: 'if/contains mandatory; strict check; Regal lint; conftest', where: 'policy/* (CI-gated)' },
+      { s: 'Token Exchange', rfc: 'RFC 8693', gov: 'Standard token-exchange grant used in GCP WIF', where: 'control-plane/federation/gcp.go' },
+      { s: 'WCAG', rfc: '2.2 AA', gov: 'Keyboard nav; color independence; reduced-motion; contrast', where: 'site/ — SVG source of truth; pause control' },
+    ],
+  },
+];
 ---
-<Base title="Tessera — Identity Engine" description="A working identity engine: OIDC/SAML/SCIM at the edge, policy-as-code, and live multi-cloud federation.">
-  <main>
-    <section style="display:grid; gap:var(--space-3);">
-      <p style="color:var(--color-accent); margin:0; font-weight:600; letter-spacing:0.02em;">TESSERA</p>
-      <h1 style="font-size:clamp(2rem, 5vw, 3.25rem); line-height:1.1; margin:0;">
-        An identity engine you can watch work.
-      </h1>
-      <p style="color:var(--color-muted); font-size:1.125rem;">
-        OIDC, SAML and SCIM at the edge. Policy-as-code with OPA. Live, keyless
-        federation into AWS, Azure and GCP. Every technology real and running.
-      </p>
-      <figure style="margin:var(--space-3) 0; background:var(--color-surface); border:1px solid var(--color-border); border-radius:var(--radius); box-shadow:var(--shadow-2); padding:var(--space-3);">
-        <IdentityGraph client:only="react" posterSrc="/poster.svg">
-          {/* slot="fallback": rendered on the server, shown until the island hydrates.
-              This eager <img> is the LCP element (canvas/SVG are never LCP candidates).
-              Plain eager <img> (not Astro <Image>) because the asset lives in /public.
-              The box is reserved via aspect-ratio so swapping to the live graph is CLS 0. */}
-          <img
-            slot="fallback"
-            src="/poster.svg"
-            alt="Identity flow graph (static)"
-            width={800}
-            height={420}
-            fetchpriority="high"
-            loading="eager"
-            decoding="sync"
-            style="display:block; width:100%; height:auto; aspect-ratio:800 / 420;"
+<Base
+  title="Tessera — an identity engine you can watch work."
+  description="A bespoke, working identity engine: OIDC/SAML RP + OIDC IdP, SCIM 2.0, OPA/Regorus policy-as-code, and keyless AWS/Azure/GCP federation — on Cloudflare (Rust/WASM edge + Go control plane)."
+  sectionNav={true}
+>
+  <main id="main">
+    <!-- ── 1. HERO ──────────────────────────────────────────────────────── -->
+    <section class="hero" aria-labelledby="hero-h">
+      <div class="wrap hero__inner">
+        <div class="hero__copy hero__load">
+          <p class="eyebrow">IDENTITY ENGINE</p>
+          <h1 id="hero-h" class="hero__h1">An identity engine you can watch work.</h1>
+          <p class="hero__thesis">
+            OIDC and SAML at the edge, SCIM 2.0 provisioning, policy-as-code with
+            OPA/Regorus, and keyless federation into AWS, Azure and GCP — every
+            layer real and running. Below, an identity travels the whole system live.
+          </p>
+          <div class="hero__cta">
+            <a class="btn btn--primary" href="#how-it-works">See it flow end to end</a>
+            <a class="btn btn--ghost" href="#system">Read the architecture</a>
+          </div>
+        </div>
+
+        <figure class="hero__graph tile">
+          <IdentityGraph client:only="react" posterSrc="/poster.svg">
+            <img
+              slot="fallback"
+              src="/poster.svg"
+              alt="Identity flow graph (static)"
+              width={800}
+              height={420}
+              fetchpriority="high"
+              loading="eager"
+              decoding="sync"
+              style="display:block; width:100%; height:auto; aspect-ratio:800 / 420;"
+            />
+          </IdentityGraph>
+          <figcaption class="hero__cap">
+            The whole solution moving: an identity flows from the IdP through the
+            edge engine and policy into the control plane and the three clouds.
+            Run the demo to drive a live cascade.
+          </figcaption>
+        </figure>
+      </div>
+    </section>
+
+    <hr class="tessella-rule" />
+
+    <!-- ── 2. OVERVIEW ──────────────────────────────────────────────────── -->
+    <section id="overview" class="section" aria-labelledby="overview-h">
+      <div class="wrap section__grid">
+        <header class="section__head">
+          <p class="eyebrow">WHAT IT IS</p>
+          <h2 id="overview-h" class="section__h2">One engine for identity across every IdP and every cloud.</h2>
+        </header>
+        <div class="section__lead prose">
+          <p>
+            Identity is fragmented: workforce IdPs (Okta, Entra) speak OIDC, SAML
+            and SCIM; each cloud has its own trust model; authorization lives in
+            scattered app code; and lifecycle (joiner / mover / leaver) leaks
+            standing privilege. Tessera is one bespoke engine that unifies all of
+            it — authentication, authorization, provisioning and lifecycle —
+            built to the current security bar end to end.
+          </p>
+          <p>
+            The edge is a single Rust/WASM Cloudflare Worker. It is an OIDC
+            <strong>Relying Party</strong> to Okta and Entra <em>and</em> a real
+            OIDC <strong>Provider</strong> that the clouds trust, a SCIM 2.0
+            service provider that absorbs both Okta and Entra PATCH dialects, and
+            the Protocol Enforcement Point that evaluates Regorus (Rego v1) policy
+            on <em>every</em> request and fails closed. A native Go control plane
+            runs the lifecycle saga and exchanges short-lived, keyless tokens into
+            AWS, Azure and GCP.
+          </p>
+          <p>
+            Nothing here is a mockup. Discovery, JWKS, federation, decisions and
+            SCIM are real endpoints (see <a href="#usage">Usage</a>); every claim
+            on this page is backed by a standard or a cited source.
+          </p>
+        </div>
+      </div>
+    </section>
+
+    <hr class="tessella-rule" />
+
+    <!-- ── 3. SYSTEM DESIGN ─────────────────────────────────────────────── -->
+    <section id="system" class="section" aria-labelledby="system-h">
+      <div class="wrap">
+        <header class="section__head section__head--full">
+          <p class="eyebrow">SYSTEM DESIGN</p>
+          <h2 id="system-h" class="section__h2">Six layers, one keyless data path.</h2>
+          <p class="section__sub">
+            All six layers deploy on Cloudflare and the three clouds, orchestrated
+            by the Go control plane. Cloud infrastructure is ephemeral and keyless.
+          </p>
+        </header>
+        <div class="reveal"><ArchitectureDiagram /></div>
+      </div>
+    </section>
+
+    <hr class="tessella-rule" />
+
+    <!-- ── 4. HOW IT WORKS ──────────────────────────────────────────────── -->
+    <section id="how-it-works" class="section" aria-labelledby="how-h">
+      <div class="wrap">
+        <header class="section__head section__head--full">
+          <p class="eyebrow">HOW IT WORKS</p>
+          <h2 id="how-h" class="section__h2">Five flows, traced step by step.</h2>
+          <p class="section__sub">The same identity, viewed five ways. The live graph below replays these as real telemetry.</p>
+        </header>
+
+        <div class="seqgrid reveal">
+          <SequenceDiagram
+            id="seq-oidc"
+            title="OIDC login → session"
+            caption="(a) Login: state/nonce/PKCE generated at the edge, iss verified (RFC 9207), ID token validated against the registered key, opaque __Host- session minted in a Durable Object."
+            participants={[
+              { id: 'B', label: 'Browser' },
+              { id: 'W', label: 'Edge Worker' },
+              { id: 'IdP', label: 'Okta / Entra' },
+              { id: 'DO', label: 'Durable Obj' },
+            ]}
+            messages={[
+              { from: 'B', to: 'W', label: 'GET /authorize', active: true },
+              { from: 'W', to: 'W', label: 'state · nonce · PKCE (S256)', self: true },
+              { from: 'W', to: 'B', label: '302 → IdP', dashed: true },
+              { from: 'B', to: 'IdP', label: 'authenticate' },
+              { from: 'IdP', to: 'W', label: '/callback?code&iss', active: true },
+              { from: 'W', to: 'W', label: 'verify state + iss', self: true },
+              { from: 'W', to: 'IdP', label: 'POST /token (code_verifier)' },
+              { from: 'IdP', to: 'W', label: 'id_token', dashed: true },
+              { from: 'W', to: 'W', label: 'validate alg/iss/aud/exp/nonce', self: true, active: true },
+              { from: 'W', to: 'DO', label: 'create opaque session' },
+              { from: 'W', to: 'B', label: 'Set-Cookie __Host-session', dashed: true, active: true },
+            ]}
           />
-        </IdentityGraph>
-        <figcaption style="color:var(--color-muted); font-size:0.9rem; margin-top:var(--space-2);">
-          The whole solution: an identity flows from the IdP through the edge engine and policy, into the control plane and the three clouds.
-        </figcaption>
-      </figure>
-      <div style="display:flex; gap:var(--space-2); flex-wrap:wrap;">
-        <a href="/standards/" style="background:var(--color-accent); color:#fff; text-decoration:none; padding:var(--space-1) var(--space-3); border-radius:var(--radius); font-weight:600;">
-          Explore the standards
-        </a>
-        <a href="/best-practices/" style="color:var(--color-accent); text-decoration:none; padding:var(--space-1) var(--space-3); border-radius:var(--radius); font-weight:600; border:1px solid var(--color-accent);">
-          Best practices we followed
-        </a>
+
+          <SequenceDiagram
+            id="seq-fed"
+            title="Per-cloud federated token mint + exchange"
+            caption="(b) Federation: the edge mints a distinct RS256 token per cloud (correct aud each); the Go control plane exchanges each live for real short-lived credentials. Keyless, free, destroyed after."
+            participants={[
+              { id: 'B', label: 'Demo trigger' },
+              { id: 'W', label: 'Edge Worker' },
+              { id: 'CP', label: 'Go control' },
+              { id: 'C', label: 'AWS·GCP·AZ' },
+            ]}
+            messages={[
+              { from: 'B', to: 'W', label: 'POST /federate', active: true },
+              { from: 'W', to: 'W', label: 'session + Regorus policy', self: true },
+              { from: 'W', to: 'W', label: 'mint RS256 × 3 (per-cloud aud)', self: true, active: true },
+              { from: 'W', to: 'CP', label: 'tokens (EdDSA-auth)' },
+              { from: 'CP', to: 'C', label: 'AssumeRole / token exchange', active: true },
+              { from: 'C', to: 'CP', label: 'short-lived creds', dashed: true },
+              { from: 'CP', to: 'W', label: 'federation results', dashed: true },
+              { from: 'W', to: 'B', label: '{ aws, gcp, azure }', dashed: true, active: true },
+            ]}
+          />
+
+          <SequenceDiagram
+            id="seq-scim"
+            title="SCIM provisioning from Okta / Entra"
+            caption="(c) Provisioning: constant-time bearer verify, tenant isolation (BOLA), dialect normalization and a writable-attribute allow-list before any upsert. active:false never hard-deletes."
+            participants={[
+              { id: 'IdP', label: 'Okta / Entra' },
+              { id: 'W', label: 'Edge (SCIM SP)' },
+              { id: 'D1', label: 'D1' },
+              { id: 'DO', label: 'Durable Obj' },
+            ]}
+            messages={[
+              { from: 'IdP', to: 'W', label: 'POST /scim/v2/Users', active: true },
+              { from: 'W', to: 'W', label: 'constant-time bearer verify', self: true, active: true },
+              { from: 'W', to: 'W', label: 'tenant isolation (BOLA)', self: true },
+              { from: 'W', to: 'W', label: 'dialect normalize · allow-list', self: true },
+              { from: 'W', to: 'D1', label: 'upsert (userName + externalId)' },
+              { from: 'W', to: 'DO', label: 'lifecycle state' },
+              { from: 'W', to: 'IdP', label: '201 Created', dashed: true, active: true },
+              { from: 'IdP', to: 'W', label: 'PATCH active:false' },
+              { from: 'W', to: 'D1', label: 'set active=false (no delete)' },
+            ]}
+          />
+
+          <SequenceDiagram
+            id="seq-authz"
+            title="Authorization decision (PEP → Regorus → bundle)"
+            caption="(d) Decision: the edge PEP builds the four-category input and evaluates Regorus in-process against a signed bundle. Any error / undefined / unverified bundle → 403. Decision logged, tokens masked."
+            participants={[
+              { id: 'C', label: 'Client' },
+              { id: 'W', label: 'Edge (PEP)' },
+              { id: 'RE', label: 'Regorus' },
+              { id: 'Q', label: 'Queue / log' },
+            ]}
+            messages={[
+              { from: 'C', to: 'W', label: 'request + session', active: true },
+              { from: 'W', to: 'W', label: 'validate opaque token', self: true },
+              { from: 'W', to: 'W', label: 'build {subj,res,act,env}', self: true },
+              { from: 'W', to: 'RE', label: 'evaluate data.authz.allow', active: true },
+              { from: 'RE', to: 'W', label: '{ result, reason }', dashed: true },
+              { from: 'W', to: 'C', label: 'allow=true → continue / else 403', dashed: true, active: true },
+              { from: 'W', to: 'Q', label: 'decision log (masked)' },
+            ]}
+          />
+
+          <SequenceDiagram
+            id="seq-tele"
+            title="Live telemetry: Queue → DO → SSE → 3D"
+            caption="(e) Telemetry: the edge emits events fail-open to a Queue; a Durable Object aggregates with replay; the browser streams over SSE and the R3F graph damps toward each pulse in useFrame — zero React state on the hot path."
+            participants={[
+              { id: 'W', label: 'Edge Worker' },
+              { id: 'AGG', label: 'DO aggregator' },
+              { id: 'B', label: 'Browser (SSE)' },
+              { id: 'UI', label: 'R3F useFrame' },
+            ]}
+            messages={[
+              { from: 'W', to: 'AGG', label: 'emit_phase (fail-open)', active: true },
+              { from: 'AGG', to: 'AGG', label: 'EventRing + monotonic id', self: true },
+              { from: 'B', to: 'AGG', label: 'GET /stream (Last-Event-ID)' },
+              { from: 'AGG', to: 'B', label: 'SSE frame (event/data/id)', dashed: true, active: true },
+              { from: 'B', to: 'UI', label: 'zustand transient subscribe' },
+              { from: 'UI', to: 'UI', label: 'dampC toward target; park', self: true, active: true },
+            ]}
+          />
+        </div>
+
+        <figure class="livegraph reveal tile" aria-label="Live identity flow graph">
+          <figcaption class="livegraph__head">
+            <span class="eyebrow">LIVE</span>
+            <span>The telemetry path (e), running. Run the demo to drive flows (a)–(d).</span>
+          </figcaption>
+          <IdentityGraph client:only="react" posterSrc="/poster.svg">
+            <img
+              slot="fallback"
+              src="/poster.svg"
+              alt="Identity flow graph (static)"
+              width={800}
+              height={420}
+              loading="lazy"
+              decoding="async"
+              style="display:block; width:100%; height:auto; aspect-ratio:800 / 420;"
+            />
+          </IdentityGraph>
+        </figure>
+      </div>
+    </section>
+
+    <hr class="tessella-rule" />
+
+    <!-- ── 5. STACK ─────────────────────────────────────────────────────── -->
+    <section id="stack" class="section" aria-labelledby="stack-h">
+      <div class="wrap">
+        <header class="section__head section__head--full">
+          <p class="eyebrow">WHAT TECHNOLOGY IS USED</p>
+          <h2 id="stack-h" class="section__h2">The stack, and each part's job.</h2>
+        </header>
+        <ul class="stackgrid reveal">
+          {stack.map((s) => (
+            <li class="stackcard tile">
+              <span class="stackcard__mark" aria-hidden="true"></span>
+              <h3 class="stackcard__name">{s.name}</h3>
+              <p class="stackcard__role">{s.role}</p>
+            </li>
+          ))}
+        </ul>
+      </div>
+    </section>
+
+    <hr class="tessella-rule" />
+
+    <!-- ── 6. USAGE ─────────────────────────────────────────────────────── -->
+    <section id="usage" class="section" aria-labelledby="usage-h">
+      <div class="wrap">
+        <header class="section__head section__head--full">
+          <p class="eyebrow">HOW TO USE IT</p>
+          <h2 id="usage-h" class="section__h2">Real endpoints, copy-pasteable.</h2>
+          <p class="section__sub">
+            Secret-gated endpoints check a Bearer token <strong>constant-time</strong> and
+            <strong> fail closed</strong> if the secret is unset. Discovery and JWKS are public.
+            The decision PEP is authenticated by an Ed25519-signed policy bundle, not a bearer.
+          </p>
+        </header>
+
+        <div class="usagegrid">
+          {usage.map((u) => (
+            <article class="usage tile">
+              <header class="usage__head">
+                <h3 class="usage__title"><code class="usage__id">#{u.id}</code> {u.title}</h3>
+                <p class="usage__note">{u.note}</p>
+              </header>
+              <p class="usage__label token">Request</p>
+              <CodeBlock code={u.req} lang={u.reqLang} label={`${u.title} request`} />
+              <p class="usage__label token">Response</p>
+              <CodeBlock code={u.res} lang="json" label={`${u.title} response`} />
+            </article>
+          ))}
+        </div>
+      </div>
+    </section>
+
+    <hr class="tessella-rule" />
+
+    <!-- ── 7. STANDARDS FOLLOWED ────────────────────────────────────────── -->
+    <section id="standards" class="section" aria-labelledby="standards-h">
+      <div class="wrap">
+        <header class="section__head section__head--full">
+          <p class="eyebrow">STANDARDS FOLLOWED</p>
+          <h2 id="standards-h" class="section__h2">Every standard, what it governs, where it lives.</h2>
+          <p class="section__sub">
+            The authoritative compliance map — RFCs, NIST, ISO, OWASP, SLSA, Rego v1, WCAG.
+            Full per-technology citations are in <a href="/standards/">Standards &amp; technologies</a>.
+          </p>
+        </header>
+
+        <div class="stdmap reveal">
+          {standardsGroups.map((g) => (
+            <div class="stdgroup tile">
+              <h3 class="stdgroup__h3">{g.group}</h3>
+              <div class="stdtable" role="table" aria-label={`${g.group} standards`}>
+                <div class="stdtable__head" role="row">
+                  <span role="columnheader">Standard</span>
+                  <span role="columnheader">Governs</span>
+                  <span role="columnheader">Where</span>
+                </div>
+                {g.rows.map((r) => (
+                  <div class="stdtable__row" role="row">
+                    <span role="cell" class="stdtable__name">
+                      {r.s}{r.rfc ? <span class="stdtag token">{r.rfc}</span> : null}
+                    </span>
+                    <span role="cell" class="stdtable__gov">{r.gov}</span>
+                    <span role="cell" class="stdtable__where token">{r.where}</span>
+                  </div>
+                ))}
+              </div>
+            </div>
+          ))}
+        </div>
+      </div>
+    </section>
+
+    <hr class="tessella-rule" />
+
+    <!-- ── 8. BEST PRACTICES FOLLOWED ───────────────────────────────────── -->
+    <section id="best-practices" class="section" aria-labelledby="bp-h">
+      <div class="wrap">
+        <header class="section__head section__head--full">
+          <p class="eyebrow">BEST PRACTICES FOLLOWED</p>
+          <h2 id="bp-h" class="section__h2">{bpTotal} cited practices across {techsRaw.length} technologies.</h2>
+          <p class="section__sub">Grouped by area; every claim links to its authoritative source.</p>
+        </header>
+
+        <div class="bpgrid reveal">
+          {techsRaw.map((t) => (
+            <section class="bpcard tile" aria-labelledby={`bpc-${t.data.requirementKey}`}>
+              <h3 id={`bpc-${t.data.requirementKey}`} class="bpcard__h3">
+                <span class="bpcard__mark" aria-hidden="true"></span>
+                <a href={`#tech-${t.data.requirementKey}`}>{t.data.name}</a>
+              </h3>
+              <BestPracticesList items={t.data.bestPractices} />
+            </section>
+          ))}
+        </div>
+      </div>
+    </section>
+
+    <hr class="tessella-rule" />
+
+    <!-- ── 9. TECHNOLOGIES (inline deep-dives) ──────────────────────────── -->
+    <section id="technologies" class="section" aria-labelledby="tech-h">
+      <div class="wrap">
+        <header class="section__head section__head--full">
+          <p class="eyebrow">TECHNOLOGIES</p>
+          <h2 id="tech-h" class="section__h2">Every technology, with a real example.</h2>
+          <p class="section__sub">
+            All {techsRaw.length} technologies inline — each with the standards it follows, the
+            cited best practices, and a real code sample. Expand any tile.
+          </p>
+        </header>
+
+        <div class="techlist reveal">
+          {techs.map(({ entry, Content }) => (
+            <TechnologySection data={entry.data} expandable={true} level={3}>
+              <Content />
+            </TechnologySection>
+          ))}
+        </div>
       </div>
     </section>
   </main>
+
+  <style>
+    /* ── Section rhythm ── careful specificity so paddings don't cancel ── */
+    .section { padding-block: var(--section-pad); }
+    .section__head { margin-bottom: var(--space-5); }
+    .section__head--full { max-width: 760px; }
+    .section__h2 { font-size: clamp(1.7rem, 3.6vw, 2.5rem); margin: var(--space-2) 0 0; }
+    .section__sub { color: var(--muted); font-size: 1.05rem; margin-top: var(--space-2); }
+
+    .section__grid { display: grid; gap: var(--space-5); }
+    @media (min-width: 900px) { .section__grid { grid-template-columns: 0.85fr 1.15fr; align-items: start; } }
+    .prose p { color: var(--ink); font-size: 1.05rem; margin: 0 0 var(--space-3); }
+    .prose p:last-child { margin-bottom: 0; }
+    .prose strong { font-weight: 600; }
+
+    /* ── Hero ── */
+    .hero { padding-block: clamp(56px, 8vw, 104px) clamp(40px, 6vw, 72px); }
+    .hero__inner { display: grid; gap: var(--space-5); align-items: center; }
+    @media (min-width: 980px) { .hero__inner { grid-template-columns: 0.92fr 1.08fr; gap: var(--space-6); } }
+    .hero__h1 { font-size: clamp(2.4rem, 6vw, 4.1rem); margin: var(--space-2) 0; font-weight: 460; }
+    .hero__thesis { font-size: clamp(1.05rem, 1.6vw, 1.2rem); color: var(--muted); max-width: 54ch; }
+    .hero__cta { display: flex; gap: var(--space-2); flex-wrap: wrap; margin-top: var(--space-4); }
+    .hero__graph { padding: var(--space-3); }
+    .hero__cap { margin-top: var(--space-2); color: var(--muted); font-size: 0.9rem; line-height: 1.5; }
+
+    .btn {
+      display: inline-flex; align-items: center; text-decoration: none; font-weight: 600;
+      padding: 12px 22px; border-radius: var(--radius); font-size: 0.96rem;
+      transition: background var(--dur-standard) var(--ease-standard), border-color var(--dur-standard) var(--ease-standard), transform var(--dur-standard) var(--ease-standard);
+    }
+    .btn--primary { background: var(--lapis); color: #fff; }
+    .btn--primary:hover { background: var(--lapis-700); color: #fff; transform: translateY(-1px); }
+    .btn--ghost { background: var(--paper-2); color: var(--lapis); border: 1px solid var(--line); }
+    .btn--ghost:hover { border-color: var(--lapis); }
+    @media (prefers-reduced-motion: reduce) { .btn--primary:hover { transform: none; } }
+
+    /* ── How it works ── */
+    .seqgrid { display: grid; gap: var(--space-4); }
+    @media (min-width: 880px) { .seqgrid { grid-template-columns: 1fr 1fr; } }
+    .livegraph { margin-top: var(--space-5); padding: var(--space-3); }
+    .livegraph__head { display: flex; align-items: center; gap: 12px; margin-bottom: var(--space-2); color: var(--muted); font-size: 0.9rem; }
+    .livegraph__head .eyebrow { color: var(--lapis); }
+
+    /* ── Stack ── */
+    .stackgrid { list-style: none; margin: 0; padding: 0; display: grid; gap: var(--space-3); grid-template-columns: repeat(auto-fill, minmax(240px, 1fr)); }
+    .stackcard { padding: var(--space-3); }
+    .stackcard__mark { display: inline-block; width: 9px; height: 9px; background: var(--gold); border-radius: 2px; transform: rotate(45deg); margin-bottom: var(--space-2); }
+    .stackcard__name { font-size: 1.05rem; margin: 0 0 6px; }
+    .stackcard__role { margin: 0; color: var(--muted); font-size: 0.9rem; line-height: 1.5; }
+
+    /* ── Usage ── */
+    .usagegrid { display: grid; gap: var(--space-4); }
+    @media (min-width: 920px) { .usagegrid { grid-template-columns: 1fr 1fr; } }
+    .usage { padding: var(--space-4); scroll-margin-top: 72px; }
+    .usage__title { font-size: 1.12rem; margin: 0; display: flex; align-items: baseline; gap: 8px; flex-wrap: wrap; }
+    .usage__id { font-family: var(--font-mono); font-size: 0.78rem; color: var(--lapis); }
+    .usage__note { color: var(--muted); font-size: 0.88rem; margin: 8px 0 var(--space-2); line-height: 1.5; }
+    .usage__label { color: var(--muted); margin: var(--space-2) 0 0; text-transform: uppercase; letter-spacing: 0.08em; font-size: 0.72rem; }
+
+    /* ── Standards map ── */
+    .stdmap { display: grid; gap: var(--space-3); }
+    .stdgroup { padding: var(--space-4); }
+    .stdgroup__h3 { font-size: 1.1rem; margin: 0 0 var(--space-2); }
+    .stdtable { display: grid; }
+    .stdtable__head, .stdtable__row {
+      display: grid; grid-template-columns: 1.1fr 1.6fr 1.1fr; gap: var(--space-3);
+      padding: var(--space-2) 0; border-bottom: 1px solid var(--line); align-items: baseline;
+    }
+    .stdtable__head { color: var(--muted); font-family: var(--font-mono); font-size: 0.7rem; text-transform: uppercase; letter-spacing: 0.08em; }
+    .stdtable__row:last-child { border-bottom: 0; }
+    .stdtable__name { font-weight: 600; font-size: 0.95rem; display: flex; flex-wrap: wrap; align-items: baseline; gap: 7px; }
+    /* Gold is decorative (left rule) only; tag text is ink for WCAG AA. */
+    .stdtag { color: var(--ink); border: 1px solid var(--line); border-left: 3px solid var(--gold); background: var(--paper); border-radius: var(--radius-sm); padding: 1px 6px; font-size: 0.68rem; }
+    .stdtable__gov { color: var(--muted); font-size: 0.9rem; line-height: 1.45; }
+    .stdtable__where { color: var(--lapis); font-size: 0.74rem; word-break: break-word; }
+    @media (max-width: 720px) {
+      .stdtable__head { display: none; }
+      .stdtable__row { grid-template-columns: 1fr; gap: 4px; padding: var(--space-2) 0; }
+      .stdtable__where { font-size: 0.72rem; }
+    }
+
+    /* ── Best practices ── */
+    .bpgrid { display: grid; gap: var(--space-3); grid-template-columns: 1fr; }
+    @media (min-width: 760px) { .bpgrid { grid-template-columns: 1fr 1fr; } }
+    .bpcard { padding: var(--space-4); }
+    .bpcard__h3 { font-size: 1.05rem; margin: 0 0 var(--space-3); display: flex; align-items: center; gap: 9px; }
+    .bpcard__h3 a { color: inherit; text-decoration: none; }
+    .bpcard__h3 a:hover { color: var(--lapis); }
+    .bpcard__mark { width: 9px; height: 9px; background: var(--gold); border-radius: 2px; transform: rotate(45deg); flex: none; }
+
+    /* ── Technologies ── */
+    .techlist { display: grid; gap: var(--space-3); }
+
+    /* ── Scroll reveal + orchestrated hero load (motion-safe only) ── */
+    @media (prefers-reduced-motion: no-preference) {
+      .reveal { opacity: 0; transform: translateY(14px); transition: opacity 600ms var(--ease-standard), transform 600ms var(--ease-standard); }
+      .reveal.is-in { opacity: 1; transform: none; }
+      /* Hero copy fades up on load — never touches the graph/LCP poster.
+         Kept short (≤ ~360ms total) so it never leaves interactive controls
+         at a reduced opacity that would fail a color-contrast audit. */
+      .hero__load > * { opacity: 0; transform: translateY(8px); animation: heroIn 300ms var(--ease-standard) forwards; }
+      .hero__load > :nth-child(1) { animation-delay: 20ms; }
+      .hero__load > :nth-child(2) { animation-delay: 50ms; }
+      .hero__load > :nth-child(3) { animation-delay: 80ms; }
+      .hero__load > :nth-child(4) { animation-delay: 110ms; }
+      @keyframes heroIn { to { opacity: 1; transform: none; } }
+    }
+  </style>
+
+  <script>
+    // Scroll-triggered reveals for diagrams/sections; motion-safe (CSS gates it).
+    const mq = window.matchMedia('(prefers-reduced-motion: reduce)');
+    const els = Array.from(document.querySelectorAll<HTMLElement>('.reveal'));
+    if (mq.matches) {
+      els.forEach((el) => el.classList.add('is-in'));
+    } else {
+      const io = new IntersectionObserver(
+        (entries) => {
+          for (const e of entries) {
+            if (e.isIntersecting) { e.target.classList.add('is-in'); io.unobserve(e.target); }
+          }
+        },
+        { rootMargin: '0px 0px -8% 0px', threshold: 0.08 },
+      );
+      els.forEach((el) => io.observe(el));
+    }
+  </script>
 </Base>

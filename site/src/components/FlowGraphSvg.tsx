@@ -37,9 +37,10 @@ export function FlowGraphSvg({ title = 'Identity flow graph' }: { title?: string
 
       {GRAPH_NODES.map((n) => (
         <g key={n.id} tabIndex={0} aria-label={n.label} transform={`translate(${n.x * W} ${n.y * H})`}>
-          <circle r={26} fill="var(--color-surface)" stroke="var(--color-border)" strokeWidth={2} />
-          <path d={n.icon} transform="translate(-12 -12) scale(1)" fill="none" stroke="var(--color-text)" strokeWidth={1.5} />
-          <text x={0} y={44} textAnchor="middle" fontSize={13} fill="var(--color-text)">{n.label}</text>
+          {/* Gold ring = the tessera/mosaic node marker (decorative; label carries meaning). */}
+          <circle r={26} fill="var(--paper-2)" stroke="var(--gold)" strokeWidth={2} />
+          <path d={n.icon} transform="translate(-12 -12) scale(1)" fill="none" stroke="var(--ink)" strokeWidth={1.5} />
+          <text x={0} y={44} textAnchor="middle" fontSize={13} fill="var(--ink)" fontFamily="var(--font-sans)">{n.label}</text>
         </g>
       ))}
     </svg>

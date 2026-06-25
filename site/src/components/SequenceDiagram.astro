@@ -1,0 +1,90 @@
+---
+// Hand-built, token-styled sequence diagram (no Mermaid). Each diagram lists its
+// participants (lifelines) and an ordered set of messages between them. Rendered
+// as semantic SVG with an accessible <title>/<desc> so it is legible + labeled.
+export interface SeqMessage {
+  from: string;
+  to: string;
+  label: string;
+  /** self-call (note/processing on one lifeline) */
+  self?: boolean;
+  /** flowing/active step → lapis; otherwise grout */
+  active?: boolean;
+  /** dashed return arrow */
+  dashed?: boolean;
+}
+interface Props {
+  id: string;
+  title: string;
+  caption: string;
+  participants: { id: string; label: string }[];
+  messages: SeqMessage[];
+}
+const { id, title, caption, participants, messages } = Astro.props;
+
+const COL_W = 150;
+const PAD_X = 16;
+const HEAD_H = 46;
+const ROW_H = 44;
+const TOP = HEAD_H + 24;
+const W = PAD_X * 2 + COL_W * (participants.length - 1) + 2 * 70;
+const H = TOP + ROW_H * messages.length + 24;
+const colX = (i: number) => PAD_X + 70 + i * COL_W;
+const idx = Object.fromEntries(participants.map((p, i) => [p.id, i]));
+---
+<figure class="seq" aria-labelledby={`${id}-t`} aria-describedby={`${id}-c`}>
+  <div class="seq__scroll">
+    <svg viewBox={`0 0 ${W} ${H}`} width="100%" role="img" aria-labelledby={`${id}-t ${id}-d`} style={`max-width:${W}px`}>
+      <title id={`${id}-t`}>{title}</title>
+      <desc id={`${id}-d`}>{caption}</desc>
+      <defs>
+        <marker id={`${id}-arr`} viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse">
+          <path d="M0 0L10 5L0 10z" fill="var(--lapis)" />
+        </marker>
+        <marker id={`${id}-arrg`} viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse">
+          <path d="M0 0L10 5L0 10z" fill="var(--muted)" />
+        </marker>
+      </defs>
+
+      {/* lifelines */}
+      {participants.map((p, i) => (
+        <g>
+          <line x1={colX(i)} y1={HEAD_H} x2={colX(i)} y2={H - 16} stroke="var(--line)" stroke-width="1.5" stroke-dasharray="3 4" />
+          <rect x={colX(i) - 64} y={8} width={128} height={HEAD_H - 16} rx="6" fill="var(--paper)" stroke="var(--gold)" stroke-width="1.5" />
+          <text x={colX(i)} y={HEAD_H - 18} text-anchor="middle" font-size="12" font-weight="600" fill="var(--ink)" font-family="var(--font-sans)">{p.label}</text>
+        </g>
+      ))}
+
+      {/* messages */}
+      {messages.map((m, r) => {
+        const y = TOP + r * ROW_H;
+        const a = colX(idx[m.from]);
+        const stroke = m.active ? 'var(--lapis)' : 'var(--muted)';
+        const marker = m.active ? `url(#${id}-arr)` : `url(#${id}-arrg)`;
+        if (m.self) {
+          const x = a;
+          return (
+            <g>
+              <path d={`M${x} ${y} h34 v16 h-30`} fill="none" stroke={stroke} stroke-width="1.6" marker-end={marker} stroke-dasharray={m.dashed ? '4 4' : undefined} />
+              <text x={x + 42} y={y - 5} font-size="11.5" fill="var(--ink)" font-family="var(--font-sans)">{m.label}</text>
+            </g>
+          );
+        }
+        const b = colX(idx[m.to]);
+        const dir = b > a ? -1 : 1;
+        return (
+          <g>
+            <line x1={a} y1={y} x2={b} y2={y} stroke={stroke} stroke-width="1.6" marker-end={marker} stroke-dasharray={m.dashed ? '4 4' : undefined} />
+            <text x={(a + b) / 2} y={y - 6} text-anchor="middle" font-size="11.5" fill="var(--ink)" font-family="var(--font-sans)">{m.label}</text>
+          </g>
+        );
+      })}
+    </svg>
+  </div>
+  <figcaption id={`${id}-c`} class="seq__cap">{caption}</figcaption>
+</figure>
+<style>
+  .seq { margin: 0; }
+  .seq__scroll { overflow-x: auto; background: var(--paper-2); border: 1px solid var(--line); border-radius: var(--radius); box-shadow: var(--shadow-1), var(--tile-inner); padding: var(--space-2); }
+  .seq__cap { margin-top: var(--space-2); color: var(--muted); font-size: 0.9rem; line-height: 1.5; }
+</style>

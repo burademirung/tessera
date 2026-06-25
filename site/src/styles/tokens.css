@@ -1,11 +1,36 @@
 :root {
-  --color-bg: #FAFAFB;
-  --color-text: #1A1A1F;
-  --color-muted: #5A5A66;
-  --color-surface: #FFFFFF;
-  --color-border: #E6E6EC;
-  --color-accent: #3B5BDB;
+  /* ── Mosaic of Trust — lapis & gold on limestone ──────────────────────────
+     tessera = a Roman access token AND a mosaic tile. Light, premium,
+     Byzantine/Roman mosaic. Every color/type below is derived from this
+     system; nothing in the site should hardcode a hex outside these tokens. */
 
+  /* Surfaces — limestone substrate + raised tiles */
+  --paper: #F4F3EE;      /* page background (limestone) */
+  --paper-2: #FBFAF7;    /* raised tile / card */
+  --line: #E4E1D8;       /* grout hairline */
+
+  /* Ink */
+  --ink: #15171C;        /* text */
+  --muted: #5C6270;      /* secondary text (AA on paper) */
+
+  /* Accents */
+  --lapis: #2740C8;      /* PRIMARY: links, CTAs, active/flowing edges, focus (~7:1 on paper) */
+  --lapis-700: #1E32A0;  /* hover / pressed */
+  --gold: #B0842B;       /* RARE secondary: eyebrows, standard-token markers, diagram accents.
+                            NEVER small body text — contrast-unsafe; ≥18px bold or decorative only. */
+  --gold-soft: rgba(176, 132, 43, 0.12); /* decorative wash */
+
+  /* ── Aliases: the existing islands/components read --color-* CSS vars.
+     Map them onto the mosaic palette so reused pieces inherit the new system
+     with zero edits. (FlowGraphSvg, CodeBlock, etc. read these.) */
+  --color-bg: var(--paper);
+  --color-text: var(--ink);
+  --color-muted: var(--muted);
+  --color-surface: var(--paper-2);
+  --color-border: var(--line);
+  --color-accent: var(--lapis);
+
+  /* 8pt spacing scale */
   --space-1: 8px;
   --space-2: 16px;
   --space-3: 24px;
@@ -14,12 +39,22 @@
   --space-6: 48px;
   --space-8: 64px;
 
-  --radius: 12px;
-  --shadow-1: 0 1px 2px rgba(26, 26, 31, 0.06);
-  --shadow-2: 0 8px 24px rgba(26, 26, 31, 0.08);
+  /* Section rhythm */
+  --section-pad: clamp(72px, 10vw, 128px);
+  --measure-page: 1140px;
 
-  --font-sans: 'Inter var', system-ui, -apple-system, sans-serif;
-  --measure: 65ch;
+  /* Tile geometry — small radius, subtle inner light over a grout border */
+  --radius: 10px;
+  --radius-sm: 6px;
+  --shadow-1: 0 1px 2px rgba(21, 23, 28, 0.05);
+  --shadow-2: 0 14px 40px rgba(21, 23, 28, 0.10);
+  --tile-inner: inset 0 1px 0 rgba(255, 255, 255, 0.65);
+
+  /* Type — Fraunces (display) · Inter (body/UI) · JetBrains Mono (machine voice) */
+  --font-display: 'Fraunces Variable', 'Fraunces', Georgia, 'Times New Roman', serif;
+  --font-sans: 'Inter Variable', 'Inter', system-ui, -apple-system, sans-serif;
+  --font-mono: 'JetBrains Mono', ui-monospace, 'SFMono-Regular', Menlo, monospace;
+  --measure: 68ch;
 
   --ease-standard: cubic-bezier(0.4, 0, 0.2, 1);
   --dur-standard: 240ms;

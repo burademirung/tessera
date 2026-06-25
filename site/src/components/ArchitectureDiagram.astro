@@ -1,0 +1,86 @@
+---
+// Premium hand-built architecture model (HTML/CSS, token-styled — no Mermaid).
+// Six layers of the engine + the Cloudflare resource map, sourced from
+// ARCHITECTURE.md §1 and §8. Legible, labeled, responsive.
+
+const layers = [
+  { n: '01', name: 'Edge Identity Engine', tech: 'Rust → WASM', role: 'The PEP for the whole system: OIDC RP + IdP, OAuth 2.1, DPoP, SCIM 2.0, opaque sessions.' },
+  { n: '02', name: 'Policy-as-Code', tech: 'OPA · Rego v1 · Regorus', role: 'Rego authored + opa-tested, evaluated in-process at the edge by pure-Rust Regorus. Fail-closed.' },
+  { n: '03', name: 'Control Plane', tech: 'native Go', role: 'JML state machines, offboarding saga, access-review campaigns, federation orchestration — real cloud SDKs.' },
+  { n: '04', name: 'Multi-cloud Federation', tech: 'Terraform · AWS CDK', role: 'Keyless trust into AWS · Azure · GCP. Three thin per-cloud modules + one AWS app slice. All ephemeral.' },
+  { n: '05', name: 'Site + Live 3D', tech: 'Astro · R3F', role: 'Static-first HTML; one capability-gated island streams live telemetry (SSE) into the 3D flow graph.' },
+  { n: '06', name: 'CI/CD', tech: 'hardened GitHub Actions', role: 'SHA-pinned, keyless OIDC × 3 clouds, SLSA provenance attested and verified on consume.' },
+];
+
+const resources = [
+  { p: 'Workers', d: 'Edge engine + SCIM + OIDC IdP (single Rust/WASM Worker)' },
+  { p: 'Durable Objects', d: 'Single-writer sessions, audit-chain head, telemetry aggregator' },
+  { p: 'D1', d: 'Identity graph: identity, role, entitlement, review tables' },
+  { p: 'KV', d: 'JWKS / discovery cache — read-only, single-flight refresh' },
+  { p: 'R2', d: 'WORM audit log (hash-chained) + signed policy bundles + TF state' },
+  { p: 'Queues', d: 'Telemetry fan-in + decision-log writes (fail-open)' },
+  { p: 'Pages', d: 'Static-first site hosting, prerendered per route' },
+];
+---
+<div class="arch">
+  <div class="arch__layers">
+    {layers.map((l) => (
+      <div class="arch__layer tile">
+        <span class="arch__num">{l.n}</span>
+        <div class="arch__layerbody">
+          <div class="arch__layerhead">
+            <h3 class="arch__name">{l.name}</h3>
+            <span class="arch__tech token">{l.tech}</span>
+          </div>
+          <p class="arch__role">{l.role}</p>
+        </div>
+      </div>
+    ))}
+  </div>
+
+  <aside class="arch__cf tile" aria-label="Cloudflare resource map">
+    <p class="eyebrow arch__cfhead">CLOUDFLARE RESOURCE MAP</p>
+    <dl class="arch__res">
+      {resources.map((r) => (
+        <div class="arch__resrow">
+          <dt class="token">{r.p}</dt>
+          <dd>{r.d}</dd>
+        </div>
+      ))}
+    </dl>
+    <p class="arch__note">All cloud infra is provisioned keylessly from CI and destroyed after each run; a tag-scoped reaper backstops orphans.</p>
+  </aside>
+</div>
+<style>
+  .arch { display: grid; gap: var(--space-4); grid-template-columns: 1fr; }
+  @media (min-width: 920px) { .arch { grid-template-columns: 1.55fr 1fr; align-items: start; } }
+
+  .arch__layers { display: grid; gap: var(--space-2); }
+  .arch__layer { display: flex; gap: var(--space-3); padding: var(--space-3); align-items: flex-start; position: relative; }
+  .arch__layer::before {
+    /* flowing lapis spine connecting the layers */
+    content: ''; position: absolute; left: 31px; top: 100%; width: 2px; height: var(--space-2);
+    background: linear-gradient(var(--lapis), transparent);
+  }
+  .arch__layer:last-child::before { display: none; }
+  /* Ink number for AA; the gold ring/border carries the mosaic accent. */
+  .arch__num {
+    flex: none; font-family: var(--font-mono); font-size: 0.82rem; font-weight: 600;
+    color: var(--ink); width: 32px; height: 32px; display: grid; place-items: center;
+    border: 1.5px solid var(--gold); border-radius: 6px; background: var(--paper);
+  }
+  .arch__layerhead { display: flex; flex-wrap: wrap; align-items: baseline; gap: 10px; }
+  .arch__name { font-size: 1.05rem; margin: 0; }
+  .arch__tech { color: var(--lapis); }
+  .arch__role { margin: 6px 0 0; color: var(--muted); font-size: 0.92rem; line-height: 1.5; max-width: none; }
+
+  .arch__cf { padding: var(--space-4); position: sticky; top: 64px; }
+  .arch__cfhead { margin-bottom: var(--space-3); }
+  .arch__res { margin: 0; display: grid; gap: 0; }
+  .arch__resrow { padding: var(--space-2) 0; border-bottom: 1px solid var(--line); }
+  .arch__resrow:first-child { padding-top: 0; }
+  .arch__res dt { color: var(--lapis); margin-bottom: 3px; }
+  .arch__res dd { margin: 0; color: var(--muted); font-size: 0.88rem; line-height: 1.45; }
+  .arch__note { margin: var(--space-3) 0 0; font-size: 0.84rem; color: var(--muted); line-height: 1.5; }
+  @media (max-width: 919px) { .arch__cf { position: static; } }
+</style>
