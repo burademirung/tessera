@@ -8,3 +8,6 @@ pub use seam::{AuthzDecision, AuthzInput, DenyAllEngine, PolicyEngine};
 
 mod engine;
 pub use engine::{AuthzError, RegorusEngine, ALLOW_QUERY};
+
+#[cfg(test)]
+mod conformance;
