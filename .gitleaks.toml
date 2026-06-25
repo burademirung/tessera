@@ -1,0 +1,16 @@
+title = "lifecycle gitleaks config"
+[extend]
+useDefault = true
+
+[allowlist]
+description = "ignore SHA pins and example placeholders, never real secrets"
+paths = [
+  '''\.terraform\.lock\.hcl''',
+  '''pnpm-lock\.yaml''',
+  '''Cargo\.lock''',
+  '''go\.sum''',
+]
+regexes = [
+  '''@[0-9a-f]{40} #''',          # action SHA pins are not secrets
+  '''OWNER/REPO''',               # contract placeholder
+]
