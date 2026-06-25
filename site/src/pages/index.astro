@@ -294,10 +294,11 @@ const standardsGroups = [
       <div class="wrap">
         <header class="section__head section__head--full">
           <p class="eyebrow">SYSTEM DESIGN</p>
-          <h2 id="system-h" class="section__h2">Six layers, one keyless data path.</h2>
+          <h2 id="system-h" class="section__h2">The whole system, one keyless data path.</h2>
           <p class="section__sub">
-            All six layers deploy on Cloudflare and the three clouds, orchestrated
-            by the Go control plane. Cloud infrastructure is ephemeral and keyless.
+            From the external IdP through the Rust edge engine and Cloudflare state
+            into the Go control plane and keyless federation across AWS, Azure and GCP —
+            every plane, traced end to end.
           </p>
         </header>
         <div class="reveal"><ArchitectureDiagram /></div>
