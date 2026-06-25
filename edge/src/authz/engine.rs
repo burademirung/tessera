@@ -69,6 +69,11 @@ impl RegorusEngine {
             Err(e) => AuthzDecision::Deny { reason: format!("policy eval error: {e}") },
         }
     }
+
+    /// Convenience for the PEP: decide and report the boolean for logging.
+    pub fn decide_bool(&self, input_json: &str) -> bool {
+        matches!(self.decide_json(input_json), AuthzDecision::Allow)
+    }
 }
 
 impl PolicyEngine for RegorusEngine {

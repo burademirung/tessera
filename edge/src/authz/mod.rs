@@ -12,5 +12,8 @@ pub use engine::{AuthzError, RegorusEngine, ALLOW_QUERY};
 mod bundle;
 pub use bundle::SignedBundle;
 
+mod decision_log;
+pub use decision_log::{build_decision_event, DecisionEvent};
+
 #[cfg(test)]
 mod conformance;
