@@ -2001,7 +2001,7 @@ func TestAudienceFor(t *testing.T) {
 	}
 }
 
-func TestMintForUsesDistinctAudience(t *testing.T) {
+func TestMintForUsesDistinctCloud(t *testing.T) {
 	d := &capturingDoer{resp: `{"token":"header.payload.sig"}`}
 	auds := Audiences{AWS: "aws-aud", GCP: "gcp-aud", Azure: "az-aud"}
 	m := NewTokenMinter("https://idp.lifecycle.example/federate", "repo:org/lifecycle:environment:production", auds, d)
@@ -2014,8 +2014,8 @@ func TestMintForUsesDistinctAudience(t *testing.T) {
 	if err := json.Unmarshal([]byte(d.lastBody), &sent); err != nil {
 		t.Fatalf("body not JSON: %s", d.lastBody)
 	}
-	if sent["aud"] != "aws-aud" {
-		t.Fatalf("aws aud = %q, want aws-aud", sent["aud"])
+	if sent["cloud"] != "aws" {
+		t.Fatalf("aws cloud = %q, want aws", sent["cloud"])
 	}
 	if sent["sub"] != "repo:org/lifecycle:environment:production" {
 		t.Fatalf("sub = %q (must be exact, no wildcard)", sent["sub"])
@@ -2025,15 +2025,15 @@ func TestMintForUsesDistinctAudience(t *testing.T) {
 		t.Fatalf("MintFor(gcp): %v", err)
 	}
 	_ = json.Unmarshal([]byte(d.lastBody), &sent)
-	if sent["aud"] != "gcp-aud" {
-		t.Fatalf("gcp aud = %q, want gcp-aud (distinct per cloud)", sent["aud"])
+	if sent["cloud"] != "gcp" {
+		t.Fatalf("gcp cloud = %q, want gcp (distinct per cloud)", sent["cloud"])
 	}
 }
 ```
 
 - [ ] **Step 2: Run it to verify it fails**
 
-Run: `cd control-plane && go test ./internal/federation/ -run 'TestAudienceFor|TestMintForUsesDistinctAudience' -v`
+Run: `cd control-plane && go test ./internal/federation/ -run 'TestAudienceFor|TestMintForUsesDistinctCloud' -v`
 Expected: FAIL (package undefined).
 
 - [ ] **Step 3: Write the minter**
@@ -2103,12 +2103,15 @@ func NewTokenMinter(idpURL, subject string, auds Audiences, doer HTTPDoer) *Toke
 }
 
 // MintFor requests the RS256 token whose aud matches the target cloud.
+// The edge /federate route authoritatively maps cloud->aud itself (security
+// boundary), so the mint body carries the cloud selector, not the audience.
 func (m *TokenMinter) MintFor(ctx context.Context, c Cloud) (string, error) {
-	aud, err := AudienceFor(c, m.auds)
-	if err != nil {
+	// Validate the cloud is known (rejects e.g. "oracle"); the audience itself
+	// is resolved server-side by the edge route, not sent on the wire.
+	if _, err := AudienceFor(c, m.auds); err != nil {
 		return "", err
 	}
-	body, err := json.Marshal(map[string]string{"aud": aud, "sub": m.subject})
+	body, err := json.Marshal(map[string]string{"cloud": string(c), "sub": m.subject})
 	if err != nil {
 		return "", err
 	}
@@ -2140,7 +2143,7 @@ func (m *TokenMinter) MintFor(ctx context.Context, c Cloud) (string, error) {
 
 - [ ] **Step 4: Run it to verify it passes**
 
-Run: `cd control-plane && go test ./internal/federation/ -run 'TestAudienceFor|TestMintForUsesDistinctAudience' -v`
+Run: `cd control-plane && go test ./internal/federation/ -run 'TestAudienceFor|TestMintForUsesDistinctCloud' -v`
 Expected: PASS (2 tests).
 
 - [ ] **Step 5: Commit**

@@ -6,7 +6,7 @@
 
 **Architecture:** One `worker` crate at `edge/`. Pure logic (JWT validation, PKCE, DPoP checks, SSRF allow-list, decision-log rendering, claim builders) lives in side-effect-free modules under `edge/src/` and is unit-tested with `#[cfg(test)]` + `cargo test` on the **host target** (no WASM needed). WASM/Worker-only surfaces (WebCrypto RSA signing, Durable Object session store, `fetch`-backed HTTP, route wiring) compile only for `wasm32` and are exercised with `worker-build` + `wrangler dev` manual checks. The PEP (the Worker) carries no policy logic; a typed `AuthzDecision` seam is left for Phase 4's Regorus wiring. SAML is **not** implemented here — a broker note documents the boundary.
 
-**Tech Stack:** Rust (edition 2021), `worker` 0.8 + `worker-macros` + `worker-build`, `jsonwebtoken` 10.4 (`default-features=false`, `rust_crypto`), `ed25519-dalek` v2, `rsa` (verify-only) + WebCrypto `SubtleCrypto` (RS256 sign/keygen), `oauth2` 5 + `openidconnect` 4 over a `fetch`-backed `AsyncHttpClient`, `pasetors` v4.local (sessions seam), `sha2`/`base64ct`/`serde`/`serde_json`, `getrandom` 0.3 `wasm_js` backend. Wrangler v4 (`wrangler.jsonc`), pinned `wranglerVersion`.
+**Tech Stack:** Rust (edition 2021), `worker` 0.8 + `worker-macros` + `worker-build`, `jsonwebtoken` 10.4 (`default-features=false`, `rust_crypto`), `ed25519-dalek` v2, WebCrypto `SubtleCrypto` (RS256 sign/keygen; RS256 verify via `jsonwebtoken` `rust_crypto`), `oauth2` 5 + `openidconnect` 4 over a `fetch`-backed `AsyncHttpClient`, `pasetors` v4.local (sessions seam), `sha2`/`base64ct`/`serde`/`serde_json`, `getrandom` 0.3 `wasm_js` backend. Wrangler v4 (`wrangler.jsonc`), pinned `wranglerVersion`.
 
 ## Global Constraints
 

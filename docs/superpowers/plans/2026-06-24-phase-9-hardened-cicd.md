@@ -2,7 +2,7 @@
 
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
-**Goal:** Tie together and harden every pipeline created in prior phases (Phase 1 `deploy-site.yml`; Phases 5/6 control-plane Cron + `terraform.yml`/`cdk.yml`) into a single supply-chain-hardened GitHub Actions estate: SHA-pinned actions with Dependabot upkeep, least-privilege `GITHUB_TOKEN`, StepSecurity harden-runner egress control, keyless OIDC to AWS/GCP/Azure pinned to GitHub Environments, a scoped Cloudflare API token (CF has no OIDC), SLSA L2 build provenance via `actions/attest-build-provenance` with verify-on-consume, Syft SBOM (CycloneDX+SPDX) gated by Grype + `trivy config`, gitleaks secret-scanning gate, per-PR ephemeral multi-cloud environments with destroy-on-close, OpenSSF Scorecard, an `actionlint`+`zizmor` CI gate, and a tag-scoped TTL reaper run from EventBridge (never a 60-day-auto-disabling scheduled workflow) plus nightly drift detection.
+**Goal:** Tie together and harden every pipeline created in prior phases (Phase 1 `deploy-site.yml`; Phase 3 `scim-conformance.yml`; Phase 4 `policy-ci.yml`; Phase 5 control-plane Cron; Phase 6 `terraform.yml`/`cdk.yml`/`destroy.yml`/`infracost.yml` — all 8 retrofitted in Task 14) into a single supply-chain-hardened GitHub Actions estate: SHA-pinned actions with Dependabot upkeep, least-privilege `GITHUB_TOKEN`, StepSecurity harden-runner egress control, keyless OIDC to AWS/GCP/Azure pinned to GitHub Environments, a scoped Cloudflare API token (CF has no OIDC), SLSA L2 build provenance via `actions/attest-build-provenance` with verify-on-consume, Syft SBOM (CycloneDX+SPDX) gated by Grype + `trivy config`, gitleaks secret-scanning gate, per-PR ephemeral multi-cloud environments with destroy-on-close, OpenSSF Scorecard, an `actionlint`+`zizmor` CI gate, and a tag-scoped TTL reaper run from EventBridge (never a 60-day-auto-disabling scheduled workflow) plus nightly drift detection.
 
 **Architecture:** This phase RETROFITS the workflows the earlier phases left as "happy-path with a SHA-pin note." The five recommended workflows from research §27 are realised as: **A** `pr-validate.yml`, **B** `pr-ephemeral.yml`, **C** `pr-teardown.yml`, **D** `release.yml`, **E** `nightly.yml` + an EventBridge/Lambda reaper. A reusable composite action (`.github/actions/harden-setup`) centralizes "harden-runner → checkout → toolchain" so every job is hardened identically. A reusable workflow (`.github/workflows/reusable-attest.yml`) centralizes SLSA provenance generation. Dependabot keeps actions and every language ecosystem patched. Everything is verified with concrete commands (`actionlint`, `zizmor`, `gitleaks detect`, `gh attestation verify`, `syft`, `terraform plan -detailed-exitcode`) producing named expected output — CI is not unit-testable, so the "test" of each task is its verification command.
 
@@ -1792,7 +1792,7 @@ for f in .github/workflows/*.yml; do grep -L 'permissions:' "$f"; done
 echo "=== workflows missing harden-runner ==="
 for f in .github/workflows/*.yml; do grep -L 'harden-runner\|harden-setup' "$f"; done
 ```
-Expected: lists `deploy-site.yml` and any Phase 5/6 workflows that still use `@v4`-style tags / lack `permissions:` / lack harden-runner. These are the files to fix.
+Expected: lists `deploy-site.yml` (Phase 1), `scim-conformance.yml` (Phase 3), `policy-ci.yml` (Phase 4), and any Phase 5/6 workflows that still use `@v4`-style tags / lack `permissions:` / lack harden-runner. These are the files to fix — all 8 earlier-phase workflows.
 
 - [ ] **Step 2: Convert `deploy-site.yml` (retrofit the Phase 1 SHA-pin note)**
 
@@ -1834,7 +1834,7 @@ jobs:
 
 - [ ] **Step 3: Apply the same conversion checklist to each remaining earlier workflow**
 
-For each of `terraform.yml`, `cdk.yml`, `destroy.yml`, `infracost.yml`, `control-plane-cron.yml` (the exact files created by Phases 5/6), apply this manual checklist:
+For each of `scim-conformance.yml` (Phase 3), `policy-ci.yml` (Phase 4), `terraform.yml`, `cdk.yml`, `destroy.yml`, `infracost.yml`, `control-plane-cron.yml` (the exact files created by Phases 3/4/5/6), apply this manual checklist:
 1. Add top-level `permissions: contents: read`.
 2. Replace the leading `harden-runner`/`checkout`/`setup-*` steps with `- uses: ./.github/actions/harden-setup` (pass `toolchain:` + `egress-policy: audit`).
 3. SHA-pin every remaining `uses:` from the header table; append `# vX.Y.Z`. For any action not in the table, resolve its SHA:
@@ -1844,6 +1844,12 @@ For each of `terraform.yml`, `cdk.yml`, `destroy.yml`, `infracost.yml`, `control
 4. Cloud auth jobs: add per-job `permissions: { id-token: write, contents: read }`; use the three OIDC login steps verbatim from Task 8; Cloudflare uses the scoped token + `wranglerVersion: '4.103.0'`.
 5. apply/destroy/cron workflows: set `concurrency: { group: <name>, cancel-in-progress: false }`.
 6. Route any `${{ github.event.* }}` / head-ref into `env:` and reference `"$VAR"` in `run:`.
+
+**Toolchain specifics for the two CI workflows (so this checklist is actionable):**
+- `scim-conformance.yml` runs the SCIM conformance `cargo test`, so pass `toolchain: rust` to `harden-setup` (it provides the Rust toolchain). No cloud auth job — it stays at top-level `permissions: contents: read` only.
+- `policy-ci.yml` runs `opa test` / `opa fmt --rego-v1` / `regal lint` and installs `opa`/`regal` itself within the job (not via a setup action), so pass `toolchain: none` to `harden-setup` and keep the existing `opa`/`regal` install steps — just SHA-pin any `uses:` (e.g. `checkout`) and add the top-level `permissions: contents: read`. No cloud auth job.
+
+Both get the identical hardened baseline as every other retrofitted workflow: SHA-pinned actions, top-level `permissions: contents: read`, and harden-runner first via the `./.github/actions/harden-setup` composite action.
 
 - [ ] **Step 4: Run the meta-gate over ALL workflows (the verification)**
 
@@ -1908,6 +1914,20 @@ git commit -m "ci: retrofit earlier-phase workflows to SHA-pinned + hardened bas
 | D `release` (gated env, attest+verify, deploy) | Task 10 |
 | E `nightly` (drift `plan -detailed-exitcode`) + EventBridge TTL reaper | Tasks 11 (drift), 12 (reaper) |
 | concurrency per PR, `cancel-in-progress: false` on apply/destroy | Tasks 8/9/10/11/14 (false); Task 7/1/13 (true, no apply) |
+
+**Task 14 retrofit coverage — all 8 earlier-phase workflows hardened (SHA-pins + top-level `permissions: contents: read` + harden-runner via composite):**
+| Workflow | Phase | Task 14 step | Toolchain / auth notes |
+| --- | --- | --- | --- |
+| `deploy-site.yml` | 1 | Step 2 (full replacement) | Cloudflare scoped token + `wranglerVersion: '4.103.0'`; `vars.CLOUDFLARE_ACCOUNT_ID` |
+| `scim-conformance.yml` | 3 | Step 3 (checklist) | `toolchain: rust` (runs SCIM conformance `cargo test`); no cloud auth |
+| `policy-ci.yml` | 4 | Step 3 (checklist) | `toolchain: none`; self-installs `opa`/`regal` (runs `opa test` / `opa fmt --rego-v1` / `regal lint`); no cloud auth |
+| `control-plane-cron.yml` | 5 | Step 3 (checklist) | cron; `cancel-in-progress: false`; per-job OIDC |
+| `terraform.yml` | 6 | Step 3 (checklist) | OIDC; `terraform_version: '1.11.4'` |
+| `cdk.yml` | 6 | Step 3 (checklist) | OIDC |
+| `destroy.yml` | 6 | Step 3 (checklist) | OIDC; `cancel-in-progress: false` |
+| `infracost.yml` | 6 | Step 3 (checklist) | no cloud auth |
+
+All 8 are swept by the Step 4 meta-gate (`actionlint` + unpinned-`uses:` grep + missing-`permissions:` scan over `.github/workflows/*.yml`) — no `*.yml` is left unfixed, so the meta-gate passes. ✓
 
 **§5 supply-chain MUST/SHOULD touching CI:**
 - "no secrets in repo (gitleaks gate) + Cloudflare Secrets" → Task 6 (gitleaks), Task 0 (CF scoped token as env secret). ✓
