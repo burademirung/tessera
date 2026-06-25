@@ -1,10 +1,46 @@
 //! HTTP glue: verify-first auth, method/path dispatch, scim+json serialization,
 //! ETag header. IO uses workers-rs; the pure DECISIONS are unit-tested here.
 
+use crate::scim::auth::VerifiedToken;
 use crate::scim::error::ScimError;
 use serde_json::Value;
+use subtle::ConstantTimeEq;
 
 pub const SCIM_CONTENT_TYPE: &str = "application/scim+json";
+
+/// Verify a presented SCIM bearer against the configured secret and derive the
+/// tenant from verified configuration. FAIL-CLOSED:
+///   - empty presented token  -> None
+///   - empty expected secret   -> None (secret not configured)
+///   - empty tenant            -> None (tenant not configured)
+///   - mismatch                -> None
+/// The secret comparison is CONSTANT-TIME (no early-exit `==` on the secret) to
+/// avoid leaking the secret via timing. The tenant is taken ONLY from verified
+/// config — never a hardcoded literal.
+///
+/// This is pure (no IO) so it is host-testable; the wasm32 call site reads the
+/// `expected`/`tenant` arguments from Cloudflare Worker secrets.
+pub fn verify_token(presented: &str, expected: &str, tenant: &str) -> Option<VerifiedToken> {
+    // Reject before any comparison if either side is unconfigured/empty: an empty
+    // configured secret must never authenticate an empty presented token.
+    if presented.is_empty() || expected.is_empty() || tenant.is_empty() {
+        return None;
+    }
+    // Constant-time equality. ct_eq over bytes is itself constant-time, but it
+    // requires equal lengths; length is not secret, so a fast length check is OK.
+    if presented.len() != expected.len() {
+        return None;
+    }
+    let equal: bool = presented.as_bytes().ct_eq(expected.as_bytes()).into();
+    if equal {
+        Some(VerifiedToken {
+            tenant_id: tenant.to_string(),
+            scopes: vec!["scim".to_string()],
+        })
+    } else {
+        None
+    }
+}
 
 /// Build the (status, body, headers) tuple for an error, used by the dispatcher.
 pub fn error_response(err: &ScimError) -> (u16, Value, &'static str) {
@@ -64,7 +100,7 @@ pub use wasm_dispatch::dispatch;
 #[cfg(target_arch = "wasm32")]
 mod wasm_dispatch {
     use super::*;
-    use crate::scim::auth::{resolve_tenant, TenantCtx, VerifiedToken};
+    use crate::scim::auth::{resolve_tenant, TenantCtx};
     use crate::scim::d1_store::Snapshot;
     use crate::scim::discovery;
     use crate::scim::page::parse_page;
@@ -79,24 +115,6 @@ mod wasm_dispatch {
 
     fn err_response(err: &ScimError) -> worker::Result<Response> {
         json_response(err.status, &err.to_json())
-    }
-
-    /// Verify the bearer token and resolve the tenant. The Phase-2 engine owns
-    /// real token verification (JWT/introspection); this wires that seam. For now
-    /// a token is accepted if present and the tenant is taken from a verified
-    /// claim; integrate the Phase-2 verifier here when its API is finalized.
-    fn verify_token(token: &str) -> Option<VerifiedToken> {
-        // Minimal non-empty-token gate; the Phase-2 introspection/JWT verifier
-        // replaces this closure body. Tenant is derived from the token subject
-        // namespace once that verifier lands.
-        if token.is_empty() {
-            None
-        } else {
-            Some(VerifiedToken {
-                tenant_id: "default".to_string(),
-                scopes: vec!["scim".to_string()],
-            })
-        }
     }
 
     fn now_iso() -> String {
@@ -191,8 +209,23 @@ mod wasm_dispatch {
         let method = req.method();
 
         // Verify-first: resolve tenant before any body parse or store access.
+        // The expected bearer + tenant come from Worker secrets. If either secret
+        // is absent we FAIL CLOSED (401) — never default-allow.
+        let expected = match env.secret("SCIM_BEARER_TOKEN") {
+            Ok(s) => s.to_string(),
+            Err(_) => {
+                return err_response(&ScimError::unauthorized("scim auth not configured"))
+            }
+        };
+        let tenant = match env.secret("SCIM_TENANT_ID") {
+            Ok(s) => s.to_string(),
+            Err(_) => {
+                return err_response(&ScimError::unauthorized("scim auth not configured"))
+            }
+        };
         let auth_header = req.headers().get("authorization").ok().flatten();
-        let ctx = match resolve_tenant(auth_header.as_deref(), &verify_token) {
+        let verify = |presented: &str| verify_token(presented, &expected, &tenant);
+        let ctx = match resolve_tenant(auth_header.as_deref(), &verify) {
             Ok(c) => c,
             Err(e) => return err_response(&e),
         };
@@ -390,5 +423,45 @@ mod tests {
         assert_eq!(status, 404);
         assert_eq!(ct, "application/scim+json");
         assert_eq!(body["status"], "404");
+    }
+
+    #[test]
+    fn verify_token_rejects_empty_presented() {
+        assert!(verify_token("", "secret", "tenant-a").is_none());
+    }
+
+    #[test]
+    fn verify_token_rejects_wrong_token() {
+        assert!(verify_token("nope", "secret", "tenant-a").is_none());
+        // length-equal-but-different must also be rejected.
+        assert!(verify_token("secreX", "secret", "tenant-a").is_none());
+    }
+
+    #[test]
+    fn verify_token_rejects_unconfigured_secret_or_tenant() {
+        // Missing/empty secret must never authenticate (even an empty token).
+        assert!(verify_token("", "", "tenant-a").is_none());
+        assert!(verify_token("secret", "", "tenant-a").is_none());
+        // Missing/empty tenant must fail closed too.
+        assert!(verify_token("secret", "secret", "").is_none());
+    }
+
+    #[test]
+    fn verify_token_accepts_correct_token_with_configured_tenant() {
+        let v = verify_token("s3cr3t", "s3cr3t", "tenant-a").expect("correct token accepted");
+        assert_eq!(v.tenant_id, "tenant-a");
+        // Never the old hardcoded constant.
+        assert_ne!(v.tenant_id, "default");
+        assert!(v.scopes.contains(&"scim".to_string()));
+    }
+
+    #[test]
+    fn verify_token_tenant_comes_from_config_not_literal() {
+        // Same secret, different configured tenants -> tenant follows config.
+        let a = verify_token("k", "k", "acme").unwrap();
+        let b = verify_token("k", "k", "globex").unwrap();
+        assert_eq!(a.tenant_id, "acme");
+        assert_eq!(b.tenant_id, "globex");
+        assert_ne!(a.tenant_id, b.tenant_id);
     }
 }

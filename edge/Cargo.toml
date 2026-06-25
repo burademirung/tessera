@@ -30,6 +30,8 @@ base64ct = { version = "1", features = ["alloc"] }
 serde = { version = "1", features = ["derive"] }
 serde_json = "1"
 getrandom = { version = "0.3", features = ["wasm_js"] }
+# Constant-time equality for the SCIM bearer secret comparison (builds on wasm32).
+subtle = { version = "2.6", default-features = false }
 
 [profile.release]
 opt-level = "z"
