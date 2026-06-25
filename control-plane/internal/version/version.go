@@ -4,7 +4,7 @@ package version
 import "fmt"
 
 // Name is the orchestrator's stable identifier (used in audit actor fields).
-const Name = "lifecycle-control-plane"
+const Name = "tessera-control-plane"
 
 // Version is overridden at build time via -ldflags; "dev" locally.
 var Version = "dev"

@@ -15,12 +15,12 @@ credentials go in `AWS_ACCESS_KEY_ID` / `AWS_SECRET_ACCESS_KEY`; bucket + endpoi
 are passed at init:
 
     terraform -chdir=terraform init \
-      -backend-config="bucket=lifecycle-tfstate" \
+      -backend-config="bucket=tessera-tfstate" \
       -backend-config="key=federation/terraform.tfstate" \
       -backend-config="endpoints={s3=\"https://<ACCOUNT_ID>.r2.cloudflarestorage.com\"}"
 
     terraform -chdir=bootstrap init \
-      -backend-config="bucket=lifecycle-tfstate" \
+      -backend-config="bucket=tessera-tfstate" \
       -backend-config="key=bootstrap/terraform.tfstate" \
       -backend-config="endpoints={s3=\"https://<ACCOUNT_ID>.r2.cloudflarestorage.com\"}"
 

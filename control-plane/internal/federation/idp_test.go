@@ -25,13 +25,13 @@ func (d *capturingDoer) Do(req *http.Request) (*http.Response, error) {
 }
 
 func TestAudienceFor(t *testing.T) {
-	auds := Audiences{AWS: "sts.amazonaws.com", GCP: "//iam.googleapis.com/projects/123456789012/locations/global/workloadIdentityPools/lifecycle-pool/providers/lifecycle-oidc", Azure: "api://AzureADTokenExchange"}
+	auds := Audiences{AWS: "sts.amazonaws.com", GCP: "//iam.googleapis.com/projects/123456789012/locations/global/workloadIdentityPools/tessera-pool/providers/tessera-oidc", Azure: "api://AzureADTokenExchange"}
 	for _, tt := range []struct {
 		c    Cloud
 		want string
 	}{
 		{CloudAWS, "sts.amazonaws.com"},
-		{CloudGCP, "//iam.googleapis.com/projects/123456789012/locations/global/workloadIdentityPools/lifecycle-pool/providers/lifecycle-oidc"},
+		{CloudGCP, "//iam.googleapis.com/projects/123456789012/locations/global/workloadIdentityPools/tessera-pool/providers/tessera-oidc"},
 		{CloudAzure, "api://AzureADTokenExchange"},
 	} {
 		got, err := AudienceFor(tt.c, auds)
@@ -47,7 +47,7 @@ func TestAudienceFor(t *testing.T) {
 func TestMintForUsesDistinctCloud(t *testing.T) {
 	d := &capturingDoer{resp: `{"token":"header.payload.sig"}`}
 	auds := Audiences{AWS: "aws-aud", GCP: "gcp-aud", Azure: "az-aud"}
-	m := NewTokenMinter("https://idp.lifecycle.example/federate", "repo:org/lifecycle:environment:production", auds, d)
+	m := NewTokenMinter("https://idp.tessera.example/federate", "repo:org/tessera:environment:production", auds, d)
 
 	tok, err := m.MintFor(context.Background(), CloudAWS)
 	if err != nil || tok != "header.payload.sig" {
@@ -60,7 +60,7 @@ func TestMintForUsesDistinctCloud(t *testing.T) {
 	if sent["cloud"] != "aws" {
 		t.Fatalf("aws cloud = %q, want aws", sent["cloud"])
 	}
-	if sent["sub"] != "repo:org/lifecycle:environment:production" {
+	if sent["sub"] != "repo:org/tessera:environment:production" {
 		t.Fatalf("sub = %q (must be exact, no wildcard)", sent["sub"])
 	}
 

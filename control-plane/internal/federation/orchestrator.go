@@ -6,7 +6,7 @@ import (
 	"fmt"
 	"time"
 
-	"github.com/lifecycle/control-plane/internal/audit"
+	"github.com/tessera/control-plane/internal/audit"
 )
 
 // Targets holds the per-cloud federation targets.
@@ -121,7 +121,7 @@ func (o *Orchestrator) emit(ctx context.Context, now time.Time, c Cloud, target 
 	// Token is never included; only non-secret target metadata.
 	_, _ = o.chain.Emit(ctx, audit.Event{
 		EventTime: now,
-		Actor:     "lifecycle-control-plane",
+		Actor:     "tessera-control-plane",
 		Action:    "federation.exchange",
 		Subject:   string(c),
 		Outcome:   outcome,

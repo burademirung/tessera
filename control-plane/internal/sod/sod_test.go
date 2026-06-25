@@ -4,7 +4,7 @@ import (
 	"context"
 	"testing"
 
-	"github.com/lifecycle/control-plane/internal/domain"
+	"github.com/tessera/control-plane/internal/domain"
 )
 
 type fakePE struct {

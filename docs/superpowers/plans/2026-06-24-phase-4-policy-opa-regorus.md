@@ -1837,7 +1837,7 @@ Create `policy/iac/fixtures/plan_good.json`:
 			"change": {
 				"actions": ["create"],
 				"after": {
-					"assume_role_policy": "{\"Statement\":[{\"Effect\":\"Allow\",\"Action\":\"sts:AssumeRoleWithWebIdentity\",\"Condition\":{\"StringEquals\":{\"token.actions.example.com:sub\":\"repo:org/lifecycle:environment:production\",\"token.actions.example.com:aud\":\"sts.amazonaws.com\"}}}]}"
+					"assume_role_policy": "{\"Statement\":[{\"Effect\":\"Allow\",\"Action\":\"sts:AssumeRoleWithWebIdentity\",\"Condition\":{\"StringEquals\":{\"token.actions.example.com:sub\":\"repo:org/tessera:environment:production\",\"token.actions.example.com:aud\":\"sts.amazonaws.com\"}}}]}"
 				}
 			}
 		},

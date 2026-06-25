@@ -38,7 +38,7 @@ bestPractices:
 SAML 2.0 remains a real enterprise on-ramp, but its XML Signature / canonical-
 ization machinery is hostile to a WASM edge and is the historical home of **XML
 Signature Wrapping** and, more recently, **parser-differential** CVEs
-(CVE-2025-25291/25292). Lifecycle therefore treats SAML as a **brokered legacy
+(CVE-2025-25291/25292). Tessera therefore treats SAML as a **brokered legacy
 on-ramp**: a hardened broker (Cloudflare Access / WorkOS / Keycloak) terminates
 SAML and re-issues OIDC, so the edge engine never sits in the XML trust path.
 

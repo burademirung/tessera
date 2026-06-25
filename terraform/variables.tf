@@ -3,11 +3,11 @@
 # ----------------------------------------------------------------------------
 # These canonical values MUST match the edge issuer's federation audiences and
 # the trust config asserted in every module/test. Single source of truth:
-#   issuer                : https://idp.lifecycle.example
+#   issuer                : https://idp.tessera.example
 #   aud (AWS)             : sts.amazonaws.com
 #   aud (Azure FIC)       : api://AzureADTokenExchange
-#   aud (GCP provider)    : //iam.googleapis.com/projects/123456789012/locations/global/workloadIdentityPools/lifecycle-pool/providers/lifecycle-oidc
-#   sub convention        : lifecycle:federation:<env>   (exact, no wildcard; <=127 chars)
+#   aud (GCP provider)    : //iam.googleapis.com/projects/123456789012/locations/global/workloadIdentityPools/tessera-pool/providers/tessera-oidc
+#   sub convention        : tessera:federation:<env>   (exact, no wildcard; <=127 chars)
 # ----------------------------------------------------------------------------
 
 variable "allowed_sub" {
@@ -70,13 +70,13 @@ variable "gcp_project_number" {
 variable "gcp_pool_id" {
   type        = string
   description = "GCP Workload Identity Pool id."
-  default     = "lifecycle-pool"
+  default     = "tessera-pool"
 }
 
 variable "gcp_provider_id" {
   type        = string
   description = "GCP WIF OIDC provider id."
-  default     = "lifecycle-oidc"
+  default     = "tessera-oidc"
 }
 
 variable "gcp_granted_role" {

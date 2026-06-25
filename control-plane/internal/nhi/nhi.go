@@ -6,7 +6,7 @@ package nhi
 import (
 	"fmt"
 
-	"github.com/lifecycle/control-plane/internal/domain"
+	"github.com/tessera/control-plane/internal/domain"
 )
 
 // Action is the disposition for an owned NHI on a human leaver.

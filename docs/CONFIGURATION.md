@@ -22,7 +22,7 @@ They are **not** secrets and do not require special storage.
 | `DB` | D1 Database | Primary relational store for users, SCIM resources, sessions, and the audit log. `database_name=lifecycle`, migrations tracked in `migrations/`. |
 | `JWKS_CACHE` | KV Namespace | Caches remote JWKS documents fetched during token verification. Eliminates repeated outbound fetches to third-party issuers. |
 | `SESSIONS` | Durable Object | Stateful session coordination. Class `SessionStore`, SQLite storage, migration tag `v1` (`new_sqlite_classes`). Each session shard is a distinct DO instance. |
-| `TELEMETRY_QUEUE` | Queue Producer (Phase 7) | Publishes `TelemetryEvent` messages to the `lifecycle-telemetry` queue. Downstream consumers fan out events to SSE subscribers. |
+| `TELEMETRY_QUEUE` | Queue Producer (Phase 7) | Publishes `TelemetryEvent` messages to the `tessera-telemetry` queue. Downstream consumers fan out events to SSE subscribers. |
 
 ### Notes
 
@@ -103,8 +103,8 @@ Variables without a default are **required**.  Pass them via `terraform.tfvars`,
 
 | Variable | Default | Purpose |
 |---|---|---|
-| `allowed_sub` | *(required)* | OIDC `sub` claim that all three cloud providers will accept for workload federation (e.g. `lifecycle:federation:demo`) |
-| `edge_issuer_url` | *(required)* | HTTPS origin of the deployed Worker, e.g. `https://tessera.degenito.ai`. **Must be the live Worker URL, not the placeholder** `https://idp.lifecycle.example`. Used as the OIDC `iss` claim and as the issuer URL registered with each cloud provider. |
+| `allowed_sub` | *(required)* | OIDC `sub` claim that all three cloud providers will accept for workload federation (e.g. `tessera:federation:demo`) |
+| `edge_issuer_url` | *(required)* | HTTPS origin of the deployed Worker, e.g. `https://tessera.degenito.ai`. **Must be the live Worker URL, not the placeholder** `https://idp.tessera.example`. Used as the OIDC `iss` claim and as the issuer URL registered with each cloud provider. |
 | `edge_issuer_host_path` | *(required)* | Host-and-path component used in AWS condition key construction (derived from `edge_issuer_url` in most deployments) |
 | `cloudflare_account_id` | *(required)* | Cloudflare account ID (e.g. `79fa22cbad976a82e96b8bb969c3f204`) |
 
@@ -122,8 +122,8 @@ Variables without a default are **required**.  Pass them via `terraform.tfvars`,
 | `gcp_project_id` | *(required)* | GCP project ID that owns the WIF pool and provider |
 | `gcp_project_number` | *(required)* | Numeric GCP project number (required for WIF principal set construction) |
 | `gcp_audience` | *(required)* | WIF audience string registered with the GCP provider |
-| `gcp_pool_id` | `lifecycle-pool` | GCP Workload Identity Federation pool ID |
-| `gcp_provider_id` | `lifecycle-oidc` | GCP WIF OIDC provider ID within the pool |
+| `gcp_pool_id` | `tessera-pool` | GCP Workload Identity Federation pool ID |
+| `gcp_provider_id` | `tessera-oidc` | GCP WIF OIDC provider ID within the pool |
 | `gcp_granted_role` | `roles/storage.objectViewer` | GCP IAM role granted to the federated principal |
 
 ### 3.4 Azure
@@ -141,7 +141,7 @@ State is stored in Cloudflare R2 via the `s3`-compatible backend.  Initialise wi
 
 ```sh
 terraform -chdir=terraform init \
-  -backend-config="bucket=lifecycle-tfstate" \
+  -backend-config="bucket=tessera-tfstate" \
   -backend-config="key=federation/terraform.tfstate" \
   -backend-config="endpoints={s3=\"https://<ACCOUNT_ID>.r2.cloudflarestorage.com\"}"
 ```

@@ -31,7 +31,7 @@ locals {
 }
 
 resource "aws_iam_role" "federation" {
-  name                 = "lifecycle-edge-federation"
+  name                 = "tessera-edge-federation"
   assume_role_policy   = local.trust_policy
   max_session_duration = 3600 # 1h short-lived sessions
 }

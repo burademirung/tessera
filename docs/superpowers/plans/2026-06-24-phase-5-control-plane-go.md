@@ -16,7 +16,7 @@
 - **Mover recalculates, never accumulates.** `grant = target − current`, `revoke = current − target`. An add-only Mover is a **bug** and has an explicit test asserting `revoke` is non-empty when `current` has entitlements absent from `target`.
 - **Reviewer ≠ grantor.** Access-review item assignment MUST exclude the identity that granted the entitlement; this is enforced in code and tested.
 - **NHIs own type + mandatory owner.** Service accounts get their own identity type and a **required human owner**; a human Leaver fans out to **transfer-or-rotate** every NHI they own.
-- **Per-cloud distinct token.** The orchestrator requests a **distinct RS256 token per cloud from the edge IdP** (correct `aud` each: AWS = `sts.amazonaws.com`; GCP = WIF provider resource URL; Azure = `api://AzureADTokenExchange`), then exchanges it: AWS `sts:AssumeRoleWithWebIdentity`, GCP STS token exchange, Azure client-credentials with `client_assertion`. The mint call is `POST {edgeBase}/federate` with body `{"cloud":"aws|azure|gcp","sub":"..."}` and response `{"token":"..."}`. Pin exact `aud` + exact `sub` (never wildcards). The federation `sub` MUST be ≤127 chars (GCP subject limit); the convention is `lifecycle:federation:<env>`. Azure FICs have a propagation delay → build in delay + retry on `AADSTS70021`.
+- **Per-cloud distinct token.** The orchestrator requests a **distinct RS256 token per cloud from the edge IdP** (correct `aud` each: AWS = `sts.amazonaws.com`; GCP = WIF provider resource URL; Azure = `api://AzureADTokenExchange`), then exchanges it: AWS `sts:AssumeRoleWithWebIdentity`, GCP STS token exchange, Azure client-credentials with `client_assertion`. The mint call is `POST {edgeBase}/federate` with body `{"cloud":"aws|azure|gcp","sub":"..."}` and response `{"token":"..."}`. Pin exact `aud` + exact `sub` (never wildcards). The federation `sub` MUST be ≤127 chars (GCP subject limit); the convention is `tessera:federation:<env>`. Azure FICs have a propagation delay → build in delay + retry on `AADSTS70021`.
 - **Writes state to D1/DO and audit to R2 via the edge API.** The control plane never opens a D1/R2 connection directly; it calls the edge API over HTTPS. Audit is **append-only with `seq`/`record_hash`/`prev_hash` hash-chaining**; **never log tokens/credentials**; **redact before hash + write** (research 02 §6; AU-9/AU-10).
 
 ---
@@ -30,14 +30,14 @@
 
 **Interfaces:**
 - Consumes: nothing (first task).
-- Produces: a buildable Go module at `control-plane/`; `go test ./...` runs; `package version` exporting `const Name = "lifecycle-control-plane"` and `func String() string`.
+- Produces: a buildable Go module at `control-plane/`; `go test ./...` runs; `package version` exporting `const Name = "tessera-control-plane"` and `func String() string`.
 
 - [ ] **Step 1: Initialize the module**
 
 Run:
 ```bash
 cd /Users/vladinirkamenev/Documents/projects/lifecycle/control-plane
-go mod init github.com/lifecycle/control-plane
+go mod init github.com/tessera/control-plane
 go mod edit -go=1.23
 ```
 
@@ -75,7 +75,7 @@ package version
 import "fmt"
 
 // Name is the orchestrator's stable identifier (used in audit actor fields).
-const Name = "lifecycle-control-plane"
+const Name = "tessera-control-plane"
 
 // Version is overridden at build time via -ldflags; "dev" locally.
 var Version = "dev"
@@ -409,7 +409,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/lifecycle/control-plane/internal/domain"
+	"github.com/tessera/control-plane/internal/domain"
 )
 
 func TestComputeJoinerGrants(t *testing.T) {
@@ -476,7 +476,7 @@ import (
 	"fmt"
 	"time"
 
-	"github.com/lifecycle/control-plane/internal/domain"
+	"github.com/tessera/control-plane/internal/domain"
 )
 
 // BirthrightPolicy maps a department to its day-one (non-privileged) grants.
@@ -556,7 +556,7 @@ import (
 	"reflect"
 	"testing"
 
-	"github.com/lifecycle/control-plane/internal/domain"
+	"github.com/tessera/control-plane/internal/domain"
 )
 
 func ids(es []domain.Entitlement) []string {
@@ -616,7 +616,7 @@ package lifecycle
 import (
 	"sort"
 
-	"github.com/lifecycle/control-plane/internal/domain"
+	"github.com/tessera/control-plane/internal/domain"
 )
 
 // MoverDiff is the recalculated set difference for a role change.
@@ -730,7 +730,7 @@ func (*appendErr) Error() string { return "append failed" }
 func ev(action, subject string, details map[string]string) Event {
 	return Event{
 		EventTime: time.Date(2026, 6, 24, 12, 0, 0, 0, time.UTC),
-		Actor:     "lifecycle-control-plane",
+		Actor:     "tessera-control-plane",
 		Action:    action,
 		Subject:   subject,
 		Outcome:   "success",
@@ -986,7 +986,7 @@ import (
 	"context"
 	"testing"
 
-	"github.com/lifecycle/control-plane/internal/domain"
+	"github.com/tessera/control-plane/internal/domain"
 )
 
 type fakeSCIM struct {
@@ -1062,7 +1062,7 @@ package ports
 import (
 	"context"
 
-	"github.com/lifecycle/control-plane/internal/domain"
+	"github.com/tessera/control-plane/internal/domain"
 )
 
 // SCIMClient pushes provisioning changes to the edge SCIM service provider.
@@ -1110,8 +1110,8 @@ import (
 	"context"
 	"fmt"
 
-	"github.com/lifecycle/control-plane/internal/domain"
-	"github.com/lifecycle/control-plane/internal/ports"
+	"github.com/tessera/control-plane/internal/domain"
+	"github.com/tessera/control-plane/internal/ports"
 )
 
 // ReconcileResult is the diff between desired and observed SCIM state.
@@ -1213,8 +1213,8 @@ import (
 	"testing"
 	"time"
 
-	"github.com/lifecycle/control-plane/internal/audit"
-	"github.com/lifecycle/control-plane/internal/ports"
+	"github.com/tessera/control-plane/internal/audit"
+	"github.com/tessera/control-plane/internal/ports"
 )
 
 type fakeRevoker struct {
@@ -1327,8 +1327,8 @@ import (
 	"context"
 	"time"
 
-	"github.com/lifecycle/control-plane/internal/audit"
-	"github.com/lifecycle/control-plane/internal/ports"
+	"github.com/tessera/control-plane/internal/audit"
+	"github.com/tessera/control-plane/internal/ports"
 )
 
 // SubState is one offboarding step per app.
@@ -1408,7 +1408,7 @@ func emit(ctx context.Context, ch *audit.Chain, now time.Time, userID, action, a
 	details["app"] = app
 	_, _ = ch.Emit(ctx, audit.Event{
 		EventTime: now,
-		Actor:     "lifecycle-control-plane",
+		Actor:     "tessera-control-plane",
 		Action:    action,
 		Subject:   userID,
 		Outcome:   outcome,
@@ -1456,7 +1456,7 @@ import (
 	"context"
 	"testing"
 
-	"github.com/lifecycle/control-plane/internal/domain"
+	"github.com/tessera/control-plane/internal/domain"
 )
 
 type fakePE struct {
@@ -1510,7 +1510,7 @@ import (
 	"context"
 	"fmt"
 
-	"github.com/lifecycle/control-plane/internal/domain"
+	"github.com/tessera/control-plane/internal/domain"
 )
 
 // PolicyEngine is the seam to the SoD-evaluating policy engine.
@@ -1599,7 +1599,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/lifecycle/control-plane/internal/domain"
+	"github.com/tessera/control-plane/internal/domain"
 )
 
 var policy = []CadencePolicy{
@@ -1689,7 +1689,7 @@ import (
 	"fmt"
 	"time"
 
-	"github.com/lifecycle/control-plane/internal/domain"
+	"github.com/tessera/control-plane/internal/domain"
 )
 
 // CadencePolicy maps a risk tier to its review interval (the D1 policy table).
@@ -1802,7 +1802,7 @@ package nhi
 import (
 	"testing"
 
-	"github.com/lifecycle/control-plane/internal/domain"
+	"github.com/tessera/control-plane/internal/domain"
 )
 
 func TestOwnedBy(t *testing.T) {
@@ -1875,7 +1875,7 @@ package nhi
 import (
 	"fmt"
 
-	"github.com/lifecycle/control-plane/internal/domain"
+	"github.com/tessera/control-plane/internal/domain"
 )
 
 // Action is the disposition for an owned NHI on a human leaver.
@@ -1949,7 +1949,7 @@ git commit -m "feat(control-plane): NHI lifecycle with leaver transfer-or-rotate
   - `type Audiences struct { AWS, GCP, Azure string }` — distinct `aud` per cloud (AWS = `sts.amazonaws.com`; GCP = WIF provider resource URL; Azure = `api://AzureADTokenExchange`). These are the exchange-time audiences consumed by Tasks 13–15; the mint call itself selects the per-cloud token by `cloud`.
   - `func AudienceFor(c Cloud, a Audiences) (string, error)`
   - `type HTTPDoer interface { Do(*http.Request) (*http.Response, error) }`
-  - `type TokenMinter struct { ... }` with `func NewTokenMinter(edgeBase, subject string, auds Audiences, doer HTTPDoer) *TokenMinter` and `func (m *TokenMinter) MintFor(ctx context.Context, c Cloud) (string, error)` — POSTs to `{edgeBase}/federate` with body `{"cloud":"aws|azure|gcp","sub":"..."}` (exact `sub`, never a wildcard; `sub` MUST be ≤127 chars, GCP limit — convention `lifecycle:federation:<env>`) and reads `{"token":"..."}`, returning the RS256 JWT. Validates a distinct token is requested per cloud (different `cloud`).
+  - `type TokenMinter struct { ... }` with `func NewTokenMinter(edgeBase, subject string, auds Audiences, doer HTTPDoer) *TokenMinter` and `func (m *TokenMinter) MintFor(ctx context.Context, c Cloud) (string, error)` — POSTs to `{edgeBase}/federate` with body `{"cloud":"aws|azure|gcp","sub":"..."}` (exact `sub`, never a wildcard; `sub` MUST be ≤127 chars, GCP limit — convention `tessera:federation:<env>`) and reads `{"token":"..."}`, returning the RS256 JWT. Validates a distinct token is requested per cloud (different `cloud`).
 
 - [ ] **Step 1: Write the failing test**
 
@@ -1982,13 +1982,13 @@ func (d *capturingDoer) Do(req *http.Request) (*http.Response, error) {
 }
 
 func TestAudienceFor(t *testing.T) {
-	auds := Audiences{AWS: "sts.amazonaws.com", GCP: "//iam.googleapis.com/projects/123456789012/locations/global/workloadIdentityPools/lifecycle-pool/providers/lifecycle-oidc", Azure: "api://AzureADTokenExchange"}
+	auds := Audiences{AWS: "sts.amazonaws.com", GCP: "//iam.googleapis.com/projects/123456789012/locations/global/workloadIdentityPools/tessera-pool/providers/tessera-oidc", Azure: "api://AzureADTokenExchange"}
 	for _, tt := range []struct {
 		c    Cloud
 		want string
 	}{
 		{CloudAWS, "sts.amazonaws.com"},
-		{CloudGCP, "//iam.googleapis.com/projects/123456789012/locations/global/workloadIdentityPools/lifecycle-pool/providers/lifecycle-oidc"},
+		{CloudGCP, "//iam.googleapis.com/projects/123456789012/locations/global/workloadIdentityPools/tessera-pool/providers/tessera-oidc"},
 		{CloudAzure, "api://AzureADTokenExchange"},
 	} {
 		got, err := AudienceFor(tt.c, auds)
@@ -2004,7 +2004,7 @@ func TestAudienceFor(t *testing.T) {
 func TestMintForUsesDistinctCloud(t *testing.T) {
 	d := &capturingDoer{resp: `{"token":"header.payload.sig"}`}
 	auds := Audiences{AWS: "aws-aud", GCP: "gcp-aud", Azure: "az-aud"}
-	m := NewTokenMinter("https://idp.lifecycle.example/federate", "repo:org/lifecycle:environment:production", auds, d)
+	m := NewTokenMinter("https://idp.tessera.example/federate", "repo:org/tessera:environment:production", auds, d)
 
 	tok, err := m.MintFor(context.Background(), CloudAWS)
 	if err != nil || tok != "header.payload.sig" {
@@ -2017,7 +2017,7 @@ func TestMintForUsesDistinctCloud(t *testing.T) {
 	if sent["cloud"] != "aws" {
 		t.Fatalf("aws cloud = %q, want aws", sent["cloud"])
 	}
-	if sent["sub"] != "repo:org/lifecycle:environment:production" {
+	if sent["sub"] != "repo:org/tessera:environment:production" {
 		t.Fatalf("sub = %q (must be exact, no wildcard)", sent["sub"])
 	}
 
@@ -2178,7 +2178,7 @@ package federation
 import "testing"
 
 func TestBuildAWSExchange(t *testing.T) {
-	in, err := BuildAWSExchange("arn:aws:iam::123456789012:role/demo", "lifecycle-demo", "header.payload.sig")
+	in, err := BuildAWSExchange("arn:aws:iam::123456789012:role/demo", "tessera-demo", "header.payload.sig")
 	if err != nil {
 		t.Fatalf("BuildAWSExchange: %v", err)
 	}
@@ -2611,7 +2611,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/lifecycle/control-plane/internal/audit"
+	"github.com/tessera/control-plane/internal/audit"
 )
 
 // capturingDoer is reused from idp_test.go (same package). The orchestrator
@@ -2644,7 +2644,7 @@ func (nopSink) Append(_ context.Context, _ audit.Record) error { return nil }
 
 func TestFederateAll(t *testing.T) {
 	d := &capturingDoer{resp: `{"token":"h.p.s"}`}
-	m := NewTokenMinter("https://idp.lifecycle.example/federate", "repo:org/r:environment:production",
+	m := NewTokenMinter("https://idp.tessera.example/federate", "repo:org/r:environment:production",
 		Audiences{AWS: "aws-aud", GCP: "gcp-aud", Azure: "az-aud"}, d)
 	aws, gcp, az := &stubAWS{}, &stubGCP{}, &stubAzure{}
 	o := NewOrchestrator(m, aws, gcp, az, audit.NewChain(nopSink{}))
@@ -2684,7 +2684,7 @@ import (
 	"fmt"
 	"time"
 
-	"github.com/lifecycle/control-plane/internal/audit"
+	"github.com/tessera/control-plane/internal/audit"
 )
 
 // Targets holds the per-cloud federation targets.
@@ -2799,7 +2799,7 @@ func (o *Orchestrator) emit(ctx context.Context, now time.Time, c Cloud, target 
 	// Token is never included; only non-secret target metadata.
 	_, _ = o.chain.Emit(ctx, audit.Event{
 		EventTime: now,
-		Actor:     "lifecycle-control-plane",
+		Actor:     "tessera-control-plane",
 		Action:    "federation.exchange",
 		Subject:   string(c),
 		Outcome:   outcome,
@@ -2854,8 +2854,8 @@ import (
 	"testing"
 	"time"
 
-	"github.com/lifecycle/control-plane/internal/audit"
-	"github.com/lifecycle/control-plane/internal/ports"
+	"github.com/tessera/control-plane/internal/audit"
+	"github.com/tessera/control-plane/internal/ports"
 )
 
 func TestParseArgs(t *testing.T) {
@@ -2925,9 +2925,9 @@ import (
 	"strings"
 	"time"
 
-	"github.com/lifecycle/control-plane/internal/audit"
-	"github.com/lifecycle/control-plane/internal/offboard"
-	"github.com/lifecycle/control-plane/internal/ports"
+	"github.com/tessera/control-plane/internal/audit"
+	"github.com/tessera/control-plane/internal/offboard"
+	"github.com/tessera/control-plane/internal/ports"
 )
 
 // Config is the parsed invocation.
@@ -2992,7 +2992,7 @@ import (
 	"os"
 	"time"
 
-	"github.com/lifecycle/control-plane/internal/cli"
+	"github.com/tessera/control-plane/internal/cli"
 )
 
 func main() {
@@ -3022,7 +3022,7 @@ import (
 	"log"
 	"os"
 
-	"github.com/lifecycle/control-plane/internal/cli"
+	"github.com/tessera/control-plane/internal/cli"
 )
 
 func main() {

@@ -28,7 +28,7 @@ func (*appendErr) Error() string { return "append failed" }
 func ev(action, subject string, details map[string]string) Event {
 	return Event{
 		EventTime: time.Date(2026, 6, 24, 12, 0, 0, 0, time.UTC),
-		Actor:     "lifecycle-control-plane",
+		Actor:     "tessera-control-plane",
 		Action:    action,
 		Subject:   subject,
 		Outcome:   "success",

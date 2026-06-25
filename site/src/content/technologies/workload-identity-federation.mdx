@@ -44,7 +44,7 @@ bestPractices:
 ---
 
 Multi-cloud federation needs **trust plus short-lived token exchange**, not
-running cloud compute — which is why Lifecycle's live federation into AWS, Azure
+running cloud compute — which is why Tessera's live federation into AWS, Azure
 **and** GCP is genuinely keyless and free. The edge engine, acting as an OIDC
 Provider, mints a **distinct RS256 token per cloud** (the only algorithm all
 three accept; Azure is RS256-only), each with that cloud's correct `aud`.

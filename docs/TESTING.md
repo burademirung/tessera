@@ -159,7 +159,7 @@ The `"coverage"` field in the JSON output must be ≥ `90.0`.
 ## Control Plane (Go)
 
 **Location:** `control-plane/`
-**Module:** `github.com/lifecycle/control-plane`
+**Module:** `github.com/tessera/control-plane`
 **Go version:** 1.23
 **Triggered by CI:** `control-plane-cron.yml` (integration jobs)
 

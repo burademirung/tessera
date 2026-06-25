@@ -886,7 +886,7 @@ Create `site/src/pages/index.astro`:
 import Base from '../layouts/Base.astro';
 import { IdentityGraph } from '../components/IdentityGraph';
 ---
-<Base title="Lifecycle — Identity Engine" description="A working identity engine: OIDC/SAML/SCIM at the edge, policy-as-code, and live multi-cloud federation.">
+<Base title="Tessera — Identity Engine" description="A working identity engine: OIDC/SAML/SCIM at the edge, policy-as-code, and live multi-cloud federation.">
   <main>
     <section style="display:grid; gap:var(--space-3);">
       <p style="color:var(--color-accent); margin:0; font-weight:600; letter-spacing:0.02em;">LIFECYCLE</p>
@@ -1002,7 +1002,7 @@ git commit -m "feat(site): landing page with poster-LCP hero and graph island"
 Create `site/wrangler.jsonc`:
 ```jsonc
 {
-  "name": "lifecycle-site",
+  "name": "tessera-site",
   "compatibility_date": "2026-06-01",
   "pages_build_output_dir": "./dist"
 }

@@ -106,8 +106,8 @@ mod tests {
     fn cfg() -> RpConfig {
         RpConfig {
             authorization_endpoint: "https://okta.example/oauth2/v1/authorize".into(),
-            client_id: "lifecycle-rp".into(),
-            redirect_uri: "https://idp.lifecycle.example/callback".into(),
+            client_id: "tessera-rp".into(),
+            redirect_uri: "https://idp.tessera.example/callback".into(),
             scope: "openid profile email".into(),
         }
     }
@@ -139,7 +139,7 @@ mod tests {
         assert!(req.authorize_url.contains("code_challenge_method=S256"));
         assert!(req.authorize_url.contains("state=st-abc"));
         assert!(req.authorize_url.contains("nonce=nc-xyz"));
-        assert!(req.authorize_url.contains("client_id=lifecycle-rp"));
+        assert!(req.authorize_url.contains("client_id=tessera-rp"));
         assert!(!req.authorize_url.contains("code_challenge_method=plain"));
     }
 

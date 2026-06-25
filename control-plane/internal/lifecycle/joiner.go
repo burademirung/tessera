@@ -5,7 +5,7 @@ import (
 	"fmt"
 	"time"
 
-	"github.com/lifecycle/control-plane/internal/domain"
+	"github.com/tessera/control-plane/internal/domain"
 )
 
 // BirthrightPolicy maps a department to its day-one (non-privileged) grants.

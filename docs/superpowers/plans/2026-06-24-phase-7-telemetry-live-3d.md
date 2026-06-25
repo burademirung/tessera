@@ -370,7 +370,7 @@ git commit -m "feat(edge): TelemetryEvent Rust mirror + validator"
 **Files:**
 - Create: `edge/src/telemetry/emit.rs`
 - Modify: `edge/src/telemetry/mod.rs` (`pub mod emit;`)
-- Modify: `edge/wrangler.jsonc` (Phase 2 created `wrangler.jsonc`, not `.toml`; add a `queues.producers` binding `TELEMETRY_QUEUE` → `lifecycle-telemetry`)
+- Modify: `edge/wrangler.jsonc` (Phase 2 created `wrangler.jsonc`, not `.toml`; add a `queues.producers` binding `TELEMETRY_QUEUE` → `tessera-telemetry`)
 - Modify: `edge/Cargo.toml` (enable the `worker` crate's `queue` feature)
 - Modify (seam, minimal): the Phase-2 engine's phase-transition site(s) — add a single `telemetry::emit::emit_phase(...)` call. Document the exact call sites in a `// PHASE-7 SEAM` comment.
 - Test: in `edge/src/telemetry/emit.rs` (`#[cfg(test)]`) — test the pure **builder**, not the Queue I/O.
@@ -468,7 +468,7 @@ Add the Queue producer binding to `edge/wrangler.jsonc` (JSONC — Phase 2's for
 ```jsonc
   "queues": {
     "producers": [
-      { "binding": "TELEMETRY_QUEUE", "queue": "lifecycle-telemetry" }
+      { "binding": "TELEMETRY_QUEUE", "queue": "tessera-telemetry" }
     ]
   }
 ```
@@ -492,7 +492,7 @@ Expected: PASS (2 tests).
 Documented `wrangler dev` check (run when iterating locally):
 ```bash
 cd /Users/vladinirkamenev/Documents/projects/lifecycle/edge
-npx wrangler queues create lifecycle-telemetry   # one-time
+npx wrangler queues create tessera-telemetry   # one-time
 npx wrangler dev
 # Trigger a demo login; confirm "queue send" logs and no auth-path errors.
 ```
@@ -854,7 +854,7 @@ import { IdentityGraph } from '../components/IdentityGraph';
 Set `site/wrangler.jsonc` (adapter emits a Worker entry; the Cloudflare adapter docs map `dist/_worker.js`):
 ```jsonc
 {
-  "name": "lifecycle-site",
+  "name": "tessera-site",
   "compatibility_date": "2026-06-01",
   "compatibility_flags": ["nodejs_compat"],
   "pages_build_output_dir": "./dist"

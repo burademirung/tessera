@@ -194,8 +194,8 @@ mod tests {
     fn params() -> VerifyParams {
         VerifyParams {
             alg: VerifyAlg::EdDSA,
-            issuer: "https://idp.lifecycle.example".into(),
-            audience: "lifecycle-edge".into(),
+            issuer: "https://idp.tessera.example".into(),
+            audience: "tessera-edge".into(),
             expected_typ: Some("at+jwt".into()),
             leeway_secs: 60,
         }
@@ -204,8 +204,8 @@ mod tests {
     fn good_claims() -> serde_json::Value {
         json!({
             "sub": "user-1",
-            "iss": "https://idp.lifecycle.example",
-            "aud": "lifecycle-edge",
+            "iss": "https://idp.tessera.example",
+            "aud": "tessera-edge",
             "exp": NOW + 300,
             "nbf": NOW - 10,
             "iat": NOW - 10
@@ -218,7 +218,7 @@ mod tests {
         let token = sign(good_claims(), Some("at+jwt"));
         let c = verify_jwt(&token, &dk, &params(), NOW).unwrap();
         assert_eq!(c.sub, "user-1");
-        assert_eq!(c.aud, vec!["lifecycle-edge".to_string()]);
+        assert_eq!(c.aud, vec!["tessera-edge".to_string()]);
     }
 
     #[test]

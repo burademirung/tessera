@@ -14,32 +14,40 @@ const SR_ONLY: React.CSSProperties = {
 export function TelemetryTable() {
   const log = useTelemetryStore((s) => s.log);
   const latest = log[log.length - 1];
+  const rows = log.slice(-8).reverse();
   return (
-    <div>
+    <div className="telem">
       <div aria-live="polite" style={SR_ONLY}>
         {latest ? `${latest.phase}: ${latest.label} at ${latest.node}` : 'No telemetry yet.'}
       </div>
-      <table>
-        <caption>Recent identity-flow events</caption>
-        <thead>
-          <tr>
-            <th scope="col">Phase</th>
-            <th scope="col">Node</th>
-            <th scope="col">Edge</th>
-            <th scope="col">Event</th>
-          </tr>
-        </thead>
-        <tbody>
-          {log.slice(-10).reverse().map((e) => (
-            <tr key={e.id}>
-              <td>{e.phase}</td>
-              <td>{e.node}</td>
-              <td>{e.edge ?? '—'}</td>
-              <td>{e.label}</td>
+      <p className="telem__cap">Recent identity-flow events</p>
+      {rows.length === 0 ? (
+        <p className="telem__empty">
+          No events yet — run the demo to watch an identity travel the system live.
+        </p>
+      ) : (
+        <table className="telem__table">
+          <caption style={SR_ONLY}>Recent identity-flow events</caption>
+          <thead>
+            <tr>
+              <th scope="col">Phase</th>
+              <th scope="col">Node</th>
+              <th scope="col">Edge</th>
+              <th scope="col">Event</th>
             </tr>
-          ))}
-        </tbody>
-      </table>
+          </thead>
+          <tbody>
+            {rows.map((e) => (
+              <tr key={e.id}>
+                <td><span className="telem__phase">{e.phase}</span></td>
+                <td className="telem__node">{e.node}</td>
+                <td className="telem__edge">{e.edge ?? '—'}</td>
+                <td>{e.label}</td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      )}
     </div>
   );
 }

@@ -6,8 +6,17 @@ export const prerender = false;
 
 // Reads the telemetry Durable Object via the runtime binding `TELEMETRY_DO`.
 // The DO exposes GET /subscribe?lastEventId=... returning a text/event-stream.
-export const GET: APIRoute = async ({ request, locals }) => {
-  const env = (locals as { runtime?: { env?: Record<string, any> } }).runtime?.env;
+export const GET: APIRoute = async ({ request }) => {
+  // Astro v6 removed `locals.runtime.env`; bindings now come from the worker
+  // module. Imported lazily so unit tests (and static contexts without the
+  // cloudflare runtime) keep importing this file without resolving the virtual
+  // module — a missing binding just yields the idle keep-alive stream below.
+  let env: Record<string, any> | undefined;
+  try {
+    ({ env } = (await import('cloudflare:workers')) as { env: Record<string, any> });
+  } catch {
+    env = undefined;
+  }
   const lastEventId = request.headers.get('Last-Event-ID') ?? '';
   const encoder = new TextEncoder();
 

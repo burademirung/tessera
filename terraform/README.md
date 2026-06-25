@@ -41,14 +41,14 @@ Every module receives the same `allowed_sub` (exact `sub` claim the edge issues)
 
 | Variable | Default | Notes |
 |---|---|---|
-| `allowed_sub` | _(required)_ | Exact OIDC `sub` the edge issues for federation. Convention: `lifecycle:federation:<env>`. ≤ 127 chars (GCP limit). Never a wildcard. |
+| `allowed_sub` | _(required)_ | Exact OIDC `sub` the edge issues for federation. Convention: `tessera:federation:<env>`. ≤ 127 chars (GCP limit). Never a wildcard. |
 | `edge_issuer_url` | _(required)_ | `https://` URL of the edge issuer. Validated: must start with `https://`. |
 | `edge_issuer_host_path` | _(required)_ | `host/path` form (no scheme) used to build AWS condition keys. |
 | `aws_audience` | `sts.amazonaws.com` | Audience for AWS STS exchange. |
 | `azure_audience` | `api://AzureADTokenExchange` | Required Azure FIC constant. |
 | `gcp_audience` | _(required)_ | GCP WIF provider resource URL. |
-| `gcp_pool_id` | `lifecycle-pool` | GCP Workload Identity Pool ID. |
-| `gcp_provider_id` | `lifecycle-oidc` | GCP WIF OIDC provider ID. |
+| `gcp_pool_id` | `tessera-pool` | GCP Workload Identity Pool ID. |
+| `gcp_provider_id` | `tessera-oidc` | GCP WIF OIDC provider ID. |
 | `gcp_granted_role` | `roles/storage.objectViewer` | Project role granted directly to the principalSet. |
 | `azure_role_definition_name` | `Reader` | Azure role assigned to the service principal. |
 
@@ -94,8 +94,8 @@ Creates a GCP Workload Identity Pool, an OIDC provider within it, and a direct r
 | `issuer_url` | Edge OIDC issuer URL |
 | `allowed_audience` | GCP WIF provider resource URL |
 | `allowed_sub` | Exact `sub` pinned in the CEL attribute condition |
-| `pool_id` | Workload Identity Pool ID (`lifecycle-pool`) |
-| `provider_id` | Provider ID (`lifecycle-oidc`) |
+| `pool_id` | Workload Identity Pool ID (`tessera-pool`) |
+| `provider_id` | Provider ID (`tessera-oidc`) |
 | `granted_role` | Project role (`roles/storage.objectViewer`) |
 
 **Outputs:** `pool_id`, `provider_id`, `principal_set`, `provider_resource_name`.
@@ -119,8 +119,8 @@ Creates an Azure AD app registration, service principal, Federated Identity Cred
 | `issuer_url` | Edge OIDC issuer URL |
 | `allowed_sub` | Exact `sub` for the FIC |
 | `audience` | `api://AzureADTokenExchange` (the required Azure constant) |
-| `app_display_name` | `lifecycle-edge-federation` |
-| `fic_name` | `lifecycle-edge-fic` |
+| `app_display_name` | `tessera-edge-federation` |
+| `fic_name` | `tessera-edge-fic` |
 | `role_definition_name` | `Reader` |
 | `role_scope` | Subscription or resource scope for the role assignment |
 
@@ -156,7 +156,7 @@ A separate Terraform configuration that provisions the CI trust so GitHub Action
 
 Creates, for each cloud:
 - **AWS**: `aws_iam_openid_connect_provider` for `token.actions.githubusercontent.com`, `aws_iam_role.ci_deploy` with trust pinned to exact `repo:<org>/<repo>:environment:<env>` sub.
-- **GCP**: Workload Identity Pool (`lifecycle-ci-pool`) + provider (`lifecycle-ci-oidc`) with `attribute_condition` filtering by repository.
+- **GCP**: Workload Identity Pool (`tessera-ci-pool`) + provider (`tessera-ci-oidc`) with `attribute_condition` filtering by repository.
 - **Azure**: App registration + service principal + FIC for GitHub Actions.
 
 Bootstrap has its own `tests/ci_trust.tftest.hcl` that verifies the CI trust is correctly wired with `mock_provider`.

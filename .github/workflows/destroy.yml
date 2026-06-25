@@ -49,7 +49,7 @@ jobs:
           R2_ACCOUNT_ID: ${{ vars.R2_ACCOUNT_ID }}
         run: |
           terraform init \
-            -backend-config="bucket=lifecycle-tfstate" \
+            -backend-config="bucket=tessera-tfstate" \
             -backend-config="key=federation/terraform.tfstate" \
             -backend-config="endpoints={s3=\"https://${R2_ACCOUNT_ID}.r2.cloudflarestorage.com\"}"
           terraform destroy -auto-approve -var="environment=pr-${PR_NUMBER}"

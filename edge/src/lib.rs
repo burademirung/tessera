@@ -41,7 +41,7 @@ mod worker_entry {
     use super::*;
     use worker::*;
 
-    const ISSUER: &str = "https://idp.lifecycle.example";
+    const ISSUER: &str = "https://idp.tessera.example";
     const CLOUD_KID: &str = "cloud-2026-06";
 
     #[event(start)]
@@ -249,7 +249,7 @@ mod worker_entry {
     fn rp_config() -> rp::RpConfig {
         rp::RpConfig {
             authorization_endpoint: "https://okta.example/oauth2/v1/authorize".into(),
-            client_id: "lifecycle-rp".into(),
+            client_id: "tessera-rp".into(),
             redirect_uri: format!("{ISSUER}/callback"),
             scope: "openid profile email".into(),
         }

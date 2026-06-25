@@ -46,7 +46,7 @@ SCIM 2.0 (RFC 7642/7643/7644) is the provisioning wire protocol, and the only
 real test of a SCIM service provider is that **both** Okta and Microsoft Entra
 drive it cleanly — and they disagree. Entra sends a capitalized `op`, can encode
 `active` as the **string** `"False"`, and uses a no-path multi-attribute
-`replace`; Okta sends a no-path `replace` with a boolean. The Lifecycle SCIM
+`replace`; Okta sends a no-path `replace` with a boolean. The Tessera SCIM
 endpoint absorbs all of it with one PATCH engine over a canonical attribute tree.
 
 Two rules prevent the classic failures: `active:false` is a **soft delete** (the

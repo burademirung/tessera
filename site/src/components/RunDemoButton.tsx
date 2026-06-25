@@ -30,24 +30,14 @@ export function RunDemoButton({
   }
 
   return (
-    <span style={{ display: 'inline-flex', gap: 'var(--space-2)', alignItems: 'center' }}>
-      <button
-        type="button"
-        onClick={run}
-        disabled={busy}
-        style={{
-          background: 'var(--color-accent)',
-          color: '#fff',
-          border: 'none',
-          padding: 'var(--space-1) var(--space-3)',
-          borderRadius: 'var(--radius)',
-          fontWeight: 600,
-          cursor: busy ? 'default' : 'pointer',
-        }}
-      >
+    <span className="demo-run">
+      <button type="button" className="demo-btn demo-btn--primary" onClick={run} disabled={busy}>
+        <svg className="demo-btn__ico" viewBox="0 0 16 16" aria-hidden="true" fill="currentColor">
+          <path d="M4 2.8v10.4a.6.6 0 0 0 .92.5l8.2-5.2a.6.6 0 0 0 0-1l-8.2-5.2A.6.6 0 0 0 4 2.8Z" />
+        </svg>
         {busy ? 'Running…' : 'Run the demo'}
       </button>
-      <span role="status" aria-live="polite">{error ?? ''}</span>
+      <span role="status" aria-live="polite" className="demo-run__status">{error ?? ''}</span>
     </span>
   );
 }

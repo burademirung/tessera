@@ -5,8 +5,8 @@ import (
 	"testing"
 	"time"
 
-	"github.com/lifecycle/control-plane/internal/audit"
-	"github.com/lifecycle/control-plane/internal/ports"
+	"github.com/tessera/control-plane/internal/audit"
+	"github.com/tessera/control-plane/internal/ports"
 )
 
 func TestParseArgs(t *testing.T) {

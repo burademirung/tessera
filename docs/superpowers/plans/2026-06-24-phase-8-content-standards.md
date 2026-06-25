@@ -2,7 +2,7 @@
 
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
-**Goal:** Build the per-technology premium content layer of the Lifecycle site: a type-safe Astro **content collection** (`technologies`) whose every entry is a Zod-validated brief carrying its name, tagline, the **standards it follows** (with RFC numbers + source URLs), the **best practices applied** (each claim citation-backed to a research-brief source URL), and a **real code sample**. Each entry renders as a crafted, light, accessible premium component (`TechnologySection`) with a live explanation, an accessible copy-microstate code block, a standards list and a cited best-practices list. A standards-index page lists all technologies; a "best practices we followed" page aggregates every cited claim. A Vitest schema/coverage suite fails if any requirement-map technology lacks an entry or any entry is missing a cited source URL; Playwright proves a page renders, headings are hierarchical, code blocks are present, and axe passes.
+**Goal:** Build the per-technology premium content layer of the Tessera site: a type-safe Astro **content collection** (`technologies`) whose every entry is a Zod-validated brief carrying its name, tagline, the **standards it follows** (with RFC numbers + source URLs), the **best practices applied** (each claim citation-backed to a research-brief source URL), and a **real code sample**. Each entry renders as a crafted, light, accessible premium component (`TechnologySection`) with a live explanation, an accessible copy-microstate code block, a standards list and a cited best-practices list. A standards-index page lists all technologies; a "best practices we followed" page aggregates every cited claim. A Vitest schema/coverage suite fails if any requirement-map technology lacks an entry or any entry is missing a cited source URL; Playwright proves a page renders, headings are hierarchical, code blocks are present, and axe passes.
 
 **Architecture:** Static-first Astro (zero client JS for content) extending the Phase 1 shell. Content lives in `site/src/content/technologies/` as MDX, loaded by the Astro 5 **Content Layer** `glob()` loader and validated by a Zod schema in `site/src/content.config.ts` (the Astro 5 config location — `src/content/config.ts` is the deprecated legacy path). The `TechnologySection` / `TechnologyCard` components are pure Astro (no hydration). Code blocks use Astro's built-in Shiki highlighting; the copy button is the **only** sprinkle of JS and is a tiny inline `<script>` with an accessible `aria-live` microstate — content remains fully readable with JS disabled. Every claim, standard, and code sample traces to a source URL pulled from `docs/superpowers/research/` briefs 01–11.
 
@@ -653,7 +653,7 @@ bestPractices:
     sourceUrl: https://openid.net/specs/openid-connect-discovery-1_0.html
 ---
 
-OpenID Connect layers identity on top of OAuth 2.0. The Lifecycle edge engine
+OpenID Connect layers identity on top of OAuth 2.0. The Tessera edge engine
 plays **both** OIDC roles. As a **Relying Party** it consumes Okta and Entra
 using the Authorization Code flow with PKCE: it generates a fresh
 `code_verifier`, sends the `S256` challenge **explicitly**, and on the callback
@@ -726,7 +726,7 @@ bestPractices:
 ---
 
 OAuth 2.1 consolidates a decade of security hard-won lessons (RFC 9700 / BCP
-240) into one stricter baseline. Lifecycle builds to the **OAuth 2.1 bar**, which
+240) into one stricter baseline. Tessera builds to the **OAuth 2.1 bar**, which
 is forward-compatible with the published BCP: PKCE on every client, exact
 redirect-URI matching, no Implicit/ROPC/`response_type=token`, single-use
 authorization codes under ten minutes, and audience-restricted access tokens.
@@ -790,7 +790,7 @@ bestPractices:
     sourceUrl: https://www.rfc-editor.org/rfc/rfc7662
 ---
 
-A JWT is only as safe as its verifier. Lifecycle follows the JWT BCP
+A JWT is only as safe as its verifier. Tessera follows the JWT BCP
 (RFC 8725) literally: an **explicit algorithm allow-list**, `alg:none` rejected,
 and **one key bound to one algorithm** so an attacker cannot downgrade an RS256
 public key into an HS256 shared secret. Every token must carry an explicit `typ`
@@ -899,7 +899,7 @@ bestPractices:
 SAML 2.0 remains a real enterprise on-ramp, but its XML Signature / canonical-
 ization machinery is hostile to a WASM edge and is the historical home of **XML
 Signature Wrapping** and, more recently, **parser-differential** CVEs
-(CVE-2025-25291/25292). Lifecycle therefore treats SAML as a **brokered legacy
+(CVE-2025-25291/25292). Tessera therefore treats SAML as a **brokered legacy
 on-ramp**: a hardened broker (Cloudflare Access / WorkOS / Keycloak) terminates
 SAML and re-issues OIDC, so the edge engine never sits in the XML trust path.
 
@@ -961,7 +961,7 @@ SCIM 2.0 (RFC 7642/7643/7644) is the provisioning wire protocol, and the only
 real test of a SCIM service provider is that **both** Okta and Microsoft Entra
 drive it cleanly — and they disagree. Entra sends a capitalized `op`, can encode
 `active` as the **string** `"False"`, and uses a no-path multi-attribute
-`replace`; Okta sends a no-path `replace` with a boolean. The Lifecycle SCIM
+`replace`; Okta sends a no-path `replace` with a boolean. The Tessera SCIM
 endpoint absorbs all of it with one PATCH engine over a canonical attribute tree.
 
 Two rules prevent the classic failures: `active:false` is a **soft delete** (the
@@ -1016,7 +1016,7 @@ bestPractices:
     sourceUrl: https://github.com/microsoft/regorus
 ---
 
-Policy-as-code in Lifecycle is **authored** as OPA Rego v1 (OPA 1.0, Jan 2025,
+Policy-as-code in Tessera is **authored** as OPA Rego v1 (OPA 1.0, Jan 2025,
 where `if` and `contains` are mandatory) and unit-tested with `opa test`, Regal
 lint, and `conftest` over Terraform plan JSON. But at runtime the edge cannot nest
 OPA-compiled-WASM inside a V8 Worker, so evaluation is done by **Regorus** — a
@@ -1074,7 +1074,7 @@ bestPractices:
     sourceUrl: https://csrc.nist.gov/pubs/sp/800/53/r5/upd1/final
 ---
 
-Lifecycle blends the two NIST access-control models without picking a side. RBAC
+Tessera blends the two NIST access-control models without picking a side. RBAC
 (INCITS 359) is simple and auditable; ABAC (SP 800-162) is flexible. The bridge
 the standard itself suggests — "a role may be viewed as a subject attribute" —
 becomes **role-centric RBAC-A**: the role sets the permission envelope and
@@ -1134,7 +1134,7 @@ bestPractices:
 ---
 
 Zero Trust (NIST SP 800-207) removes implicit trust from the network and makes
-**every request** prove itself. The load-bearing tenet for Lifecycle is
+**every request** prove itself. The load-bearing tenet for Tessera is
 continuous verification: the engine re-evaluates authorization **per request**
 with a fresh `environment` (device, time, risk) and never caches an allow
 decision for the life of a session.
@@ -1333,7 +1333,7 @@ codeSample: |
   terraform {
     required_version = ">= 1.11"
     backend "s3" {
-      bucket                      = "lifecycle-tfstate"
+      bucket                      = "tessera-tfstate"
       key                         = "federation/terraform.tfstate"
       region                      = "auto"
       use_lockfile                = true
@@ -1474,7 +1474,7 @@ bestPractices:
 ---
 
 Multi-cloud federation needs **trust plus short-lived token exchange**, not
-running cloud compute — which is why Lifecycle's live federation into AWS, Azure
+running cloud compute — which is why Tessera's live federation into AWS, Azure
 **and** GCP is genuinely keyless and free. The edge engine, acting as an OIDC
 Provider, mints a **distinct RS256 token per cloud** (the only algorithm all
 three accept; Azure is RS256-only), each with that cloud's correct `aud`.
@@ -1588,7 +1588,7 @@ bestPractices:
     sourceUrl: https://slsa.dev/spec/v1.0/levels
 ---
 
-Every deploy in Lifecycle runs through **hardened GitHub Actions**. The two
+Every deploy in Tessera runs through **hardened GitHub Actions**. The two
 load-bearing controls are SHA-pinning and keyless OIDC. Tags are mutable — the
 tj-actions/changed-files incident (CVE-2025-30066) silently re-pointed every tag,
 and only SHA-pinned consumers were safe — so every third-party action is pinned
@@ -1744,7 +1744,7 @@ const techs = (await getCollection('technologies')).sort(
   (a, b) => a.data.order - b.data.order,
 );
 ---
-<Base title="Standards & technologies — Lifecycle" description="Every technology in the Lifecycle identity engine, the standards it follows, and the best practices applied — each claim citation-backed.">
+<Base title="Standards & technologies — Tessera" description="Every technology in the Tessera identity engine, the standards it follows, and the best practices applied — each claim citation-backed.">
   <main>
     <h1 style="font-size:clamp(1.8rem,4vw,2.6rem); margin-bottom:var(--space-2);">
       Standards &amp; technologies
@@ -1781,7 +1781,7 @@ interface Props { entry: CollectionEntry<'technologies'> }
 const { entry } = Astro.props;
 const { Content } = await render(entry);
 ---
-<Base title={`${entry.data.name} — Lifecycle`} description={entry.data.tagline}>
+<Base title={`${entry.data.name} — Tessera`} description={entry.data.tagline}>
   <main>
     <p style="margin:0;"><a href="/standards/" style="color:var(--color-accent);">← All technologies</a></p>
     <h1 style="font-size:clamp(1.8rem,4vw,2.6rem); margin:var(--space-2) 0 var(--space-4);">
@@ -1943,7 +1943,7 @@ const techs = (await getCollection('technologies')).sort(
 );
 const total = techs.reduce((n, t) => n + t.data.bestPractices.length, 0);
 ---
-<Base title="Best practices we followed — Lifecycle" description="Every best practice applied across the Lifecycle identity engine, grouped by technology, each claim backed by a cited source.">
+<Base title="Best practices we followed — Tessera" description="Every best practice applied across the Tessera identity engine, grouped by technology, each claim backed by a cited source.">
   <main>
     <h1 style="font-size:clamp(1.8rem,4vw,2.6rem); margin-bottom:var(--space-2);">
       Best practices we followed

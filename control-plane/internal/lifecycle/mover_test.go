@@ -4,7 +4,7 @@ import (
 	"reflect"
 	"testing"
 
-	"github.com/lifecycle/control-plane/internal/domain"
+	"github.com/tessera/control-plane/internal/domain"
 )
 
 func ids(es []domain.Entitlement) []string {

@@ -8,9 +8,9 @@ import (
 	"strings"
 	"time"
 
-	"github.com/lifecycle/control-plane/internal/audit"
-	"github.com/lifecycle/control-plane/internal/offboard"
-	"github.com/lifecycle/control-plane/internal/ports"
+	"github.com/tessera/control-plane/internal/audit"
+	"github.com/tessera/control-plane/internal/offboard"
+	"github.com/tessera/control-plane/internal/ports"
 )
 
 // Config is the parsed invocation.

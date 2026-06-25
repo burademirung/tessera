@@ -5,11 +5,11 @@ test_clean_plan_allows if {
 	count(deny) == 0 with input as {"resource_changes": [
 		{
 			"type": "aws_iam_role",
-			"change": {"after": {"assume_role_policy": "{\"Statement\":[{\"Condition\":{\"StringEquals\":{\"idp.lifecycle.example:sub\":\"lifecycle:federation:demo\",\"idp.lifecycle.example:aud\":\"sts.amazonaws.com\"}}}]}"}},
+			"change": {"after": {"assume_role_policy": "{\"Statement\":[{\"Condition\":{\"StringEquals\":{\"idp.tessera.example:sub\":\"tessera:federation:demo\",\"idp.tessera.example:aud\":\"sts.amazonaws.com\"}}}]}"}},
 		},
 		{
 			"type": "google_project_iam_member",
-			"change": {"after": {"member": "principalSet://iam.googleapis.com/projects/123/locations/global/workloadIdentityPools/p/subject/lifecycle:federation:demo"}},
+			"change": {"after": {"member": "principalSet://iam.googleapis.com/projects/123/locations/global/workloadIdentityPools/p/subject/tessera:federation:demo"}},
 		},
 	]}
 }
@@ -18,7 +18,7 @@ test_clean_plan_allows if {
 test_wildcard_aws_sub_denied if {
 	some msg in deny with input as {"resource_changes": [{
 		"type": "aws_iam_role",
-		"change": {"after": {"assume_role_policy": "{\"Statement\":[{\"Condition\":{\"StringLike\":{\"idp.lifecycle.example:sub\":\"*\"}}}]}"}},
+		"change": {"after": {"assume_role_policy": "{\"Statement\":[{\"Condition\":{\"StringLike\":{\"idp.tessera.example:sub\":\"*\"}}}]}"}},
 	}]}
 	contains(msg, "wildcard")
 }

@@ -40,8 +40,8 @@ module "azure_fic" {
   issuer_url           = var.edge_issuer_url
   allowed_sub          = var.allowed_sub
   audience             = var.azure_audience
-  app_display_name     = "lifecycle-edge-federation"
-  fic_name             = "lifecycle-edge-fic"
+  app_display_name     = "tessera-edge-federation"
+  fic_name             = "tessera-edge-fic"
   role_definition_name = var.azure_role_definition_name
   role_scope           = var.azure_role_scope
 }

@@ -1,10 +1,10 @@
 mock_provider "aws" {}
 
 variables {
-  issuer_url       = "https://idp.lifecycle.example"
-  issuer_host_path = "idp.lifecycle.example"
+  issuer_url       = "https://idp.tessera.example"
+  issuer_host_path = "idp.tessera.example"
   client_id        = "sts.amazonaws.com"
-  allowed_sub      = "lifecycle:federation:aws"
+  allowed_sub      = "tessera:federation:aws"
 }
 
 run "trust_policy_pins_aud_and_exact_sub" {
@@ -18,11 +18,11 @@ run "trust_policy_pins_aud_and_exact_sub" {
 
   # Trust policy must StringEquals both <host-path>:aud and <host-path>:sub (exact, no wildcard).
   assert {
-    condition     = jsondecode(aws_iam_role.federation.assume_role_policy).Statement[0].Condition.StringEquals["idp.lifecycle.example:aud"] == "sts.amazonaws.com"
+    condition     = jsondecode(aws_iam_role.federation.assume_role_policy).Statement[0].Condition.StringEquals["idp.tessera.example:aud"] == "sts.amazonaws.com"
     error_message = "trust policy must pin aud with StringEquals"
   }
   assert {
-    condition     = jsondecode(aws_iam_role.federation.assume_role_policy).Statement[0].Condition.StringEquals["idp.lifecycle.example:sub"] == "lifecycle:federation:aws"
+    condition     = jsondecode(aws_iam_role.federation.assume_role_policy).Statement[0].Condition.StringEquals["idp.tessera.example:sub"] == "tessera:federation:aws"
     error_message = "trust policy must pin the EXACT sub with StringEquals (never StringLike / wildcard)"
   }
 

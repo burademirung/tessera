@@ -8,7 +8,7 @@
   //   AUTHZ_BUNDLE / AUTHZ_BUNDLE_SIG / AUTHZ_BUNDLE_PUBKEY — signed policy bundle,
   //                              detached Ed25519 sig (b64url), 32-byte hex pubkey
   // Every endpoint FAILS CLOSED if its secret is absent (mints/decides nothing).
-  "name": "lifecycle-edge",
+  "name": "tessera-edge",
   "main": "build/worker/shim.mjs",
   "compatibility_date": "2026-06-01",
   "build": {
@@ -43,7 +43,7 @@
   // (fail-open, observability only); a DO aggregator fans them out over SSE.
   "queues": {
     "producers": [
-      { "binding": "TELEMETRY_QUEUE", "queue": "lifecycle-telemetry" }
+      { "binding": "TELEMETRY_QUEUE", "queue": "tessera-telemetry" }
     ]
   }
 }

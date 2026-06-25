@@ -2,10 +2,10 @@
 name = "edge"
 version = "0.1.0"
 edition = "2021"
-authors = ["Lifecycle"]
+authors = ["Tessera"]
 
 [lib]
-name = "lifecycle_edge"
+name = "tessera_edge"
 crate-type = ["cdylib", "rlib"]
 
 [dependencies]

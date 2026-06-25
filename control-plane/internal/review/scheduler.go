@@ -7,7 +7,7 @@ import (
 	"fmt"
 	"time"
 
-	"github.com/lifecycle/control-plane/internal/domain"
+	"github.com/tessera/control-plane/internal/domain"
 )
 
 // CadencePolicy maps a risk tier to its review interval (the D1 policy table).

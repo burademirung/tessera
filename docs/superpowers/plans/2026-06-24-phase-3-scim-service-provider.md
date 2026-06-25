@@ -2742,14 +2742,14 @@ use serde_json::{json, Value};
 use std::fs;
 use std::path::Path;
 
-use lifecycle_edge::scim::auth::TenantCtx;
-use lifecycle_edge::scim::d1_store::Snapshot;
-use lifecycle_edge::scim::dialect::{coerce_active, normalize_patch};
-use lifecycle_edge::scim::discovery;
-use lifecycle_edge::scim::filter::parse_filter;
-use lifecycle_edge::scim::page::Page;
-use lifecycle_edge::scim::patch::apply_patch;
-use lifecycle_edge::scim::service::UserService;
+use tessera_edge::scim::auth::TenantCtx;
+use tessera_edge::scim::d1_store::Snapshot;
+use tessera_edge::scim::dialect::{coerce_active, normalize_patch};
+use tessera_edge::scim::discovery;
+use tessera_edge::scim::filter::parse_filter;
+use tessera_edge::scim::page::Page;
+use tessera_edge::scim::patch::apply_patch;
+use tessera_edge::scim::service::UserService;
 
 fn fixture(name: &str) -> Value {
     let p = Path::new(env!("CARGO_MANIFEST_DIR")).join("tests/fixtures").join(name);
@@ -2905,14 +2905,14 @@ fn discovery_endpoints_present() {
 }
 ```
 
-> **Note on crate name:** the `use lifecycle_edge::scim::...` paths assume the Phase-2 crate is named `lifecycle_edge` (set `[lib] name = "lifecycle_edge"` in `edge/Cargo.toml` and re-export `pub mod scim;` from `lib.rs`). If Phase-2 chose a different lib name, update the `use` paths to match — this is the only cross-phase coupling in the test.
+> **Note on crate name:** the `use tessera_edge::scim::...` paths assume the Phase-2 crate is named `tessera_edge` (set `[lib] name = "tessera_edge"` in `edge/Cargo.toml` and re-export `pub mod scim;` from `lib.rs`). If Phase-2 chose a different lib name, update the `use` paths to match — this is the only cross-phase coupling in the test.
 
 - [ ] **Step 3: Ensure the lib is testable as a library**
 
 In `edge/Cargo.toml`, confirm a `[lib]` section exists so integration tests can import it:
 ```toml
 [lib]
-name = "lifecycle_edge"
+name = "tessera_edge"
 crate-type = ["cdylib", "rlib"]
 ```
 (`cdylib` for the WASM Worker; `rlib` so `tests/conformance.rs` can link it on the host.)
@@ -3017,7 +3017,7 @@ git commit -m "test(scim): CI conformance — verbatim Okta + both Entra dialect
 
 **Placeholder scan:** No "TBD/TODO/handle later" in code. Every code step is complete, compilable Rust. The only intentionally-deferred items are explicitly labeled and assigned: the async D1 IO *body* of the dispatcher (the load-bearing parameterized SQL builders, routing, and decision logic are complete and tested), the live DO version-counter binding, and the `database_id`/D1 id values that are environment-specific (`REPLACE_WITH_D1_ID`) and the action SHA-pins (Phase 9). Each is called out in-line.
 
-**Type consistency:** `ScimError`/`ScimErrorType` (Task 1) are consumed unchanged in Tasks 3-10. `ScimUser`/`ScimGroup`/`Meta`/`list_response`/schema URN consts (Task 2) are used in Tasks 7, 8, 10. `PatchOpKind`/`NormalizedOp`/`normalize_patch`/`coerce_active` (Task 3) feed `apply_patch` (Task 4) and `UserService::patch` (Task 10). `FilterExpr`/`SqlFilter`/`parse_filter`/`compile` (Task 5) feed the Task 11 query builders. `Page`/`parse_page`/`to_sql` (Task 6) feed `UserService::list` (Task 10) and `select_by_filter_sql` (Task 11). `etag`/`check_if_match`/`apply_writable_allow_list`/`USER_WRITABLE`/`correlation_keys` (Task 7) are used by `UserService` (Task 10). `TenantCtx`/`VerifiedToken`/`resolve_tenant`/`ensure_owns` (Task 9) are used by `UserService` (Task 10) and the dispatcher (Task 11). `UserStore`/`StoredUser`/`UserService`/`Outcome` (Task 10) are implemented by `Snapshot` (Task 11) and driven by the conformance test (Task 12). The conformance test imports through the `lifecycle_edge` lib name fixed in Task 12 Step 3.
+**Type consistency:** `ScimError`/`ScimErrorType` (Task 1) are consumed unchanged in Tasks 3-10. `ScimUser`/`ScimGroup`/`Meta`/`list_response`/schema URN consts (Task 2) are used in Tasks 7, 8, 10. `PatchOpKind`/`NormalizedOp`/`normalize_patch`/`coerce_active` (Task 3) feed `apply_patch` (Task 4) and `UserService::patch` (Task 10). `FilterExpr`/`SqlFilter`/`parse_filter`/`compile` (Task 5) feed the Task 11 query builders. `Page`/`parse_page`/`to_sql` (Task 6) feed `UserService::list` (Task 10) and `select_by_filter_sql` (Task 11). `etag`/`check_if_match`/`apply_writable_allow_list`/`USER_WRITABLE`/`correlation_keys` (Task 7) are used by `UserService` (Task 10). `TenantCtx`/`VerifiedToken`/`resolve_tenant`/`ensure_owns` (Task 9) are used by `UserService` (Task 10) and the dispatcher (Task 11). `UserStore`/`StoredUser`/`UserService`/`Outcome` (Task 10) are implemented by `Snapshot` (Task 11) and driven by the conformance test (Task 12). The conformance test imports through the `tessera_edge` lib name fixed in Task 12 Step 3.
 
 ---
 

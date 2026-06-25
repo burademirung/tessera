@@ -182,7 +182,7 @@ mod tests {
         new_allow_list(&[
             "https://okta.example",
             "https://entra.example",
-            "https://idp.lifecycle.example",
+            "https://idp.tessera.example",
         ])
     }
 
@@ -193,7 +193,7 @@ mod tests {
             "https://okta.example/.well-known/openid-configuration"
         )
         .is_ok());
-        assert!(check_outbound_url(&allow(), "https://idp.lifecycle.example/jwks").is_ok());
+        assert!(check_outbound_url(&allow(), "https://idp.tessera.example/jwks").is_ok());
     }
 
     #[test]

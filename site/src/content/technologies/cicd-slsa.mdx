@@ -40,7 +40,7 @@ bestPractices:
     sourceUrl: https://slsa.dev/spec/v1.0/levels
 ---
 
-Every deploy in Lifecycle runs through **hardened GitHub Actions**. The two
+Every deploy in Tessera runs through **hardened GitHub Actions**. The two
 load-bearing controls are SHA-pinning and keyless OIDC. Tags are mutable — the
 tj-actions/changed-files incident (CVE-2025-30066) silently re-pointed every tag,
 and only SHA-pinned consumers were safe — so every third-party action is pinned

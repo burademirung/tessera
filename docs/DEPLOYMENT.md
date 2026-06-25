@@ -1,7 +1,7 @@
 # Tessera — Deployment Guide
 
-**Tessera** is the identity engine deployed as a Cloudflare Worker (`lifecycle-edge`)
-with an Astro front-end served via Cloudflare Pages (`lifecycle-site`).
+**Tessera** is the identity engine deployed as a Cloudflare Worker (`tessera-edge`)
+with an Astro front-end served via Cloudflare Pages (`tessera-site`).
 Public hostname: `tessera.degenito.ai`.
 
 > All shell commands in this guide are copy-pasteable. Run them from the repo root
@@ -181,7 +181,7 @@ The `TELEMETRY_QUEUE` binding is activated in Phase 7. Provision it in advance
 so the ID is ready when the binding is uncommented in `wrangler.jsonc`:
 
 ```sh
-wrangler queues create lifecycle-telemetry --account-id 79fa22cbad976a82e96b8bb969c3f204
+wrangler queues create tessera-telemetry --account-id 79fa22cbad976a82e96b8bb969c3f204
 ```
 
 When Phase 7 lands, add the following block to `edge/wrangler.jsonc`:
@@ -189,7 +189,7 @@ When Phase 7 lands, add the following block to `edge/wrangler.jsonc`:
 ```jsonc
 "queues": {
   "producers": [
-    { "binding": "TELEMETRY_QUEUE", "queue": "lifecycle-telemetry" }
+    { "binding": "TELEMETRY_QUEUE", "queue": "tessera-telemetry" }
   ]
 }
 ```
@@ -199,13 +199,13 @@ When Phase 7 lands, add the following block to `edge/wrangler.jsonc`:
 This bucket is used by the Terraform S3 backend, not by the Worker directly.
 
 ```sh
-wrangler r2 bucket create lifecycle-tfstate --account-id 79fa22cbad976a82e96b8bb969c3f204
+wrangler r2 bucket create tessera-tfstate --account-id 79fa22cbad976a82e96b8bb969c3f204
 ```
 
 Confirm:
 
 ```sh
-wrangler r2 bucket list --account-id 79fa22cbad976a82e96b8bb969c3f204 | grep lifecycle-tfstate
+wrangler r2 bucket list --account-id 79fa22cbad976a82e96b8bb969c3f204 | grep tessera-tfstate
 ```
 
 ---
@@ -216,7 +216,7 @@ Every secret listed below causes the Worker to **fail closed** (return an error
 or refuse to mint tokens) if absent. Set them all before the first deploy.
 
 Run each `wrangler secret put` command from the `edge/` directory, or pass
-`--name lifecycle-edge` explicitly.
+`--name tessera-edge` explicitly.
 
 ```sh
 cd edge
@@ -231,7 +231,7 @@ cd edge
 openssl rand 32 | xxd -p -c 64
 
 # Set
-wrangler secret put INTERNAL_ED25519_SEED --name lifecycle-edge --account-id 79fa22cbad976a82e96b8bb969c3f204
+wrangler secret put INTERNAL_ED25519_SEED --name tessera-edge --account-id 79fa22cbad976a82e96b8bb969c3f204
 # Paste the hex string at the prompt
 ```
 
@@ -247,7 +247,7 @@ openssl genpkey -algorithm RSA -pkeyopt rsa_keygen_bits:2048 \
   | tr -d '\n'
 
 # Set
-wrangler secret put CLOUD_RSA_PKCS8_DER_B64 --name lifecycle-edge --account-id 79fa22cbad976a82e96b8bb969c3f204
+wrangler secret put CLOUD_RSA_PKCS8_DER_B64 --name tessera-edge --account-id 79fa22cbad976a82e96b8bb969c3f204
 # Paste the base64 string at the prompt
 ```
 
@@ -260,7 +260,7 @@ Bearer token for SCIM provisioning endpoints.
 openssl rand -hex 32
 
 # Set
-wrangler secret put SCIM_BEARER_TOKEN --name lifecycle-edge --account-id 79fa22cbad976a82e96b8bb969c3f204
+wrangler secret put SCIM_BEARER_TOKEN --name tessera-edge --account-id 79fa22cbad976a82e96b8bb969c3f204
 ```
 
 ### 4.4 SCIM_TENANT_ID
@@ -269,7 +269,7 @@ Tenant identifier string (set by the operator — no generation command; use the
 tenant's slug or UUID from the identity provider).
 
 ```sh
-wrangler secret put SCIM_TENANT_ID --name lifecycle-edge --account-id 79fa22cbad976a82e96b8bb969c3f204
+wrangler secret put SCIM_TENANT_ID --name tessera-edge --account-id 79fa22cbad976a82e96b8bb969c3f204
 # Enter the tenant identifier string at the prompt
 ```
 
@@ -282,7 +282,7 @@ Bearer token for the `/federate` endpoint (consumed by the Go control-plane only
 openssl rand -hex 32
 
 # Set
-wrangler secret put FEDERATION_API_TOKEN --name lifecycle-edge --account-id 79fa22cbad976a82e96b8bb969c3f204
+wrangler secret put FEDERATION_API_TOKEN --name tessera-edge --account-id 79fa22cbad976a82e96b8bb969c3f204
 ```
 
 ### 4.6 INTROSPECT_BEARER_TOKEN
@@ -294,7 +294,7 @@ RFC 7662 caller bearer for the `/introspect` endpoint.
 openssl rand -hex 32
 
 # Set
-wrangler secret put INTROSPECT_BEARER_TOKEN --name lifecycle-edge --account-id 79fa22cbad976a82e96b8bb969c3f204
+wrangler secret put INTROSPECT_BEARER_TOKEN --name tessera-edge --account-id 79fa22cbad976a82e96b8bb969c3f204
 ```
 
 ### 4.7 AUTHZ_BUNDLE, AUTHZ_BUNDLE_SIG, AUTHZ_BUNDLE_PUBKEY
@@ -325,15 +325,15 @@ openssl pkeyutl -sign -inkey authz_signing.pem -rawin -in "$BUNDLE_PATH" \
 # ← value for AUTHZ_BUNDLE_SIG
 
 # Set all three secrets
-wrangler secret put AUTHZ_BUNDLE        --name lifecycle-edge --account-id 79fa22cbad976a82e96b8bb969c3f204
-wrangler secret put AUTHZ_BUNDLE_SIG    --name lifecycle-edge --account-id 79fa22cbad976a82e96b8bb969c3f204
-wrangler secret put AUTHZ_BUNDLE_PUBKEY --name lifecycle-edge --account-id 79fa22cbad976a82e96b8bb969c3f204
+wrangler secret put AUTHZ_BUNDLE        --name tessera-edge --account-id 79fa22cbad976a82e96b8bb969c3f204
+wrangler secret put AUTHZ_BUNDLE_SIG    --name tessera-edge --account-id 79fa22cbad976a82e96b8bb969c3f204
+wrangler secret put AUTHZ_BUNDLE_PUBKEY --name tessera-edge --account-id 79fa22cbad976a82e96b8bb969c3f204
 ```
 
 ### Verify All Secrets Are Present
 
 ```sh
-wrangler secret list --name lifecycle-edge --account-id 79fa22cbad976a82e96b8bb969c3f204
+wrangler secret list --name tessera-edge --account-id 79fa22cbad976a82e96b8bb969c3f204
 ```
 
 Expected output lists all nine names:
@@ -357,7 +357,7 @@ cargo install -q worker-build && worker-build --release
 wrangler deploy --account-id 79fa22cbad976a82e96b8bb969c3f204
 ```
 
-Wrangler reads `edge/wrangler.jsonc` for the Worker name (`lifecycle-edge`),
+Wrangler reads `edge/wrangler.jsonc` for the Worker name (`tessera-edge`),
 entrypoint (`build/worker/shim.mjs`), compatibility date (`2026-06-01`), and
 all bindings. No additional flags are required if the IDs were filled in
 during step 3.
@@ -385,7 +385,7 @@ curl -sf -o /dev/null -w "%{http_code}" "$BASE/health"
 
 **Critical:** the `issuer` field returned by `/.well-known/openid-configuration`
 must equal `https://tessera.degenito.ai` (the deployed Worker's HTTPS origin),
-**not** the placeholder `https://idp.lifecycle.example`. If it does not match,
+**not** the placeholder `https://idp.tessera.example`. If it does not match,
 update the `edge_issuer_url` Terraform variable (see section 10) and redeploy
 any federation trust resources.
 
@@ -393,7 +393,7 @@ any federation trust resources.
 
 ## 7. Build and Deploy Astro Site to Pages
 
-The Astro front-end is a separate Cloudflare Pages project (`lifecycle-site`).
+The Astro front-end is a separate Cloudflare Pages project (`tessera-site`).
 It is deployed independently of the Worker.
 
 ```sh
@@ -408,14 +408,14 @@ pnpm build
 
 # Deploy to Pages
 pnpm exec wrangler pages deploy \
-  --project-name lifecycle-site \
+  --project-name tessera-site \
   --account-id 79fa22cbad976a82e96b8bb969c3f204
 ```
 
 > **Phase 7 note:** When the `@astrojs/cloudflare` adapter is enabled, the
 > `pages_build_output_dir` switches from `./dist` to `./server` and the
 > `nodejs_compat` compatibility flag must be set in the Pages project settings
-> (Cloudflare dashboard → Pages → `lifecycle-site` → Settings → Functions →
+> (Cloudflare dashboard → Pages → `tessera-site` → Settings → Functions →
 > Compatibility Flags → add `nodejs_compat`).
 
 ---
@@ -427,7 +427,7 @@ hostname.
 
 ### Via Dashboard
 
-1. Cloudflare dashboard → Workers & Pages → `lifecycle-edge` → Settings →
+1. Cloudflare dashboard → Workers & Pages → `tessera-edge` → Settings →
    Domains & Routes → Add → Custom Domain.
 2. Enter `tessera.degenito.ai`. Cloudflare automatically creates the DNS CNAME
    and provisions a TLS certificate (may take up to 60 seconds).
@@ -471,7 +471,7 @@ Run through this checklist after every production deploy.
 [ ] D1 migration status: wrangler d1 migrations list lifecycle --remote → 0002_scim.sql Applied
 [ ] KV: wrangler kv key list --namespace-id <JWKS_CACHE_ID>   → no error (may be empty on first deploy)
 [ ] Durable Objects: no "Failed to create" errors in Cloudflare tail logs
-      wrangler tail lifecycle-edge --account-id 79fa22cbad976a82e96b8bb969c3f204
+      wrangler tail tessera-edge --account-id 79fa22cbad976a82e96b8bb969c3f204
 ```
 
 ---
@@ -489,11 +489,11 @@ Worker.
 
 ### State Backend
 
-Terraform state is stored in the Cloudflare R2 bucket `lifecycle-tfstate` via
+Terraform state is stored in the Cloudflare R2 bucket `tessera-tfstate` via
 the S3-compatible backend. The bucket endpoint uses the Cloudflare account ID.
 
 Export R2 credentials before running Terraform (create an R2 API token in the
-dashboard with "Object Read & Write" on the `lifecycle-tfstate` bucket):
+dashboard with "Object Read & Write" on the `tessera-tfstate` bucket):
 
 ```sh
 export R2_ACCOUNT_ID="79fa22cbad976a82e96b8bb969c3f204"
@@ -507,7 +507,7 @@ export AWS_SECRET_ACCESS_KEY="<R2 token secret key>"
 cd terraform
 
 terraform init \
-  -backend-config="bucket=lifecycle-tfstate" \
+  -backend-config="bucket=tessera-tfstate" \
   -backend-config="key=federation/terraform.tfstate" \
   -backend-config="endpoint=https://${R2_ACCOUNT_ID}.r2.cloudflarestorage.com"
 ```
@@ -555,7 +555,7 @@ Cloudflare retains the previous Worker deployment. Roll back immediately without
 a rebuild:
 
 ```sh
-wrangler rollback --name lifecycle-edge --account-id 79fa22cbad976a82e96b8bb969c3f204
+wrangler rollback --name tessera-edge --account-id 79fa22cbad976a82e96b8bb969c3f204
 ```
 
 Wrangler will prompt to confirm and will list the deployment being restored.
@@ -564,10 +564,10 @@ To roll back to a specific deployment (not just the previous one), list
 deployments first:
 
 ```sh
-wrangler deployments list --name lifecycle-edge --account-id 79fa22cbad976a82e96b8bb969c3f204
+wrangler deployments list --name tessera-edge --account-id 79fa22cbad976a82e96b8bb969c3f204
 # Note the deployment ID of the target version
 
-wrangler rollback <deployment-id> --name lifecycle-edge --account-id 79fa22cbad976a82e96b8bb969c3f204
+wrangler rollback <deployment-id> --name tessera-edge --account-id 79fa22cbad976a82e96b8bb969c3f204
 ```
 
 ### Pages Rollback
@@ -585,7 +585,7 @@ git push origin main
 # CI will redeploy automatically, or run the pages deploy command manually
 ```
 
-Alternatively, in the Cloudflare dashboard navigate to Pages → `lifecycle-site`
+Alternatively, in the Cloudflare dashboard navigate to Pages → `tessera-site`
 → Deployments, find the previous successful deployment, and click **Retry
 deployment** (this redeploys the exact same build artifact without a new commit).
 
@@ -596,7 +596,7 @@ immediately after rolling back the Worker (the old Worker version reads secrets
 from the current secret store, not from a snapshot):
 
 ```sh
-wrangler secret put <SECRET_NAME> --name lifecycle-edge --account-id 79fa22cbad976a82e96b8bb969c3f204
+wrangler secret put <SECRET_NAME> --name tessera-edge --account-id 79fa22cbad976a82e96b8bb969c3f204
 ```
 
 Rerun the smoke-test checklist (section 9) after every rollback.

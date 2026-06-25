@@ -9,7 +9,7 @@ import (
 	"os"
 	"time"
 
-	"github.com/lifecycle/control-plane/internal/cli"
+	"github.com/tessera/control-plane/internal/cli"
 )
 
 func main() {

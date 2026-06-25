@@ -4,7 +4,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/lifecycle/control-plane/internal/domain"
+	"github.com/tessera/control-plane/internal/domain"
 )
 
 var policy = []CadencePolicy{

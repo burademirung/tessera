@@ -103,6 +103,113 @@ a:hover { color: var(--lapis-700); }
   letter-spacing: 0.02em;
 }
 
+/* ── Live telemetry demo ──────────────────────────────────────────────────
+   Styled globally (not Astro-scoped) because the graph/controls/table are a
+   React island; scoped styles don't cross the island boundary. */
+
+/* Flowing identity along the SVG edges — the static fallback's "live" signal. */
+.flow-line { stroke-dasharray: 5 11; }
+@media (prefers-reduced-motion: no-preference) {
+  .flow-line { animation: flowDash 1.5s linear infinite; }
+}
+@keyframes flowDash { to { stroke-dashoffset: -32; } }
+
+/* Control bar: live status on the left, actions on the right */
+.demo-bar {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  flex-wrap: wrap;
+  margin-top: var(--space-3);
+  padding: 10px 12px 10px 16px;
+  background: var(--paper);
+  border: 1px solid var(--line);
+  border-radius: var(--radius);
+  box-shadow: var(--tile-inner);
+}
+.demo-live {
+  display: inline-flex;
+  align-items: center;
+  gap: 9px;
+  font-family: var(--font-mono);
+  font-size: 0.72rem;
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+  color: var(--muted);
+  margin-right: auto;
+}
+.demo-live__dot { width: 8px; height: 8px; border-radius: 50%; background: var(--lapis); flex: none; }
+.demo-live--off .demo-live__dot { background: var(--muted); }
+@media (prefers-reduced-motion: no-preference) {
+  .demo-live--on .demo-live__dot { animation: demoPulse 2s var(--ease-standard) infinite; }
+}
+@keyframes demoPulse {
+  0%   { box-shadow: 0 0 0 0 rgba(39, 64, 200, 0.45); }
+  70%  { box-shadow: 0 0 0 7px rgba(39, 64, 200, 0); }
+  100% { box-shadow: 0 0 0 0 rgba(39, 64, 200, 0); }
+}
+
+.demo-btn {
+  display: inline-flex; align-items: center; gap: 7px;
+  font-family: var(--font-sans); font-weight: 600; font-size: 0.9rem;
+  padding: 9px 16px; border-radius: var(--radius-sm);
+  border: 1px solid transparent; cursor: pointer; white-space: nowrap;
+  transition: background var(--dur-standard) var(--ease-standard),
+              border-color var(--dur-standard) var(--ease-standard),
+              color var(--dur-standard) var(--ease-standard),
+              transform var(--dur-standard) var(--ease-standard);
+}
+.demo-btn__ico { width: 13px; height: 13px; flex: none; }
+.demo-btn--primary { background: var(--lapis); color: #fff; }
+.demo-btn--primary:hover:not(:disabled) { background: var(--lapis-700); transform: translateY(-1px); }
+.demo-btn--primary:disabled { opacity: 0.6; cursor: default; }
+.demo-btn--ghost { background: var(--paper-2); color: var(--ink); border-color: var(--line); }
+.demo-btn--ghost:hover { border-color: var(--lapis); color: var(--lapis); }
+.demo-run { display: inline-flex; gap: 8px; align-items: center; }
+.demo-run__status { color: var(--muted); font-size: 0.82rem; }
+@media (prefers-reduced-motion: reduce) { .demo-btn--primary:hover { transform: none; } }
+
+/* Telemetry data panel */
+.telem { margin-top: var(--space-3); }
+.telem__cap {
+  display: flex; align-items: center; gap: 9px;
+  font-family: var(--font-mono); font-size: 0.72rem; letter-spacing: 0.14em;
+  text-transform: uppercase; color: var(--muted);
+  margin: 0 0 var(--space-2);
+}
+.telem__cap::before {
+  content: ''; width: 7px; height: 7px; background: var(--gold);
+  border-radius: 2px; transform: rotate(45deg); flex: none;
+}
+.telem__table { width: 100%; border-collapse: collapse; font-size: 0.85rem; }
+.telem__table thead th {
+  text-align: left; font-family: var(--font-mono); font-weight: 500;
+  font-size: 0.66rem; letter-spacing: 0.08em; text-transform: uppercase;
+  color: var(--muted); padding: 0 12px 8px 0; border-bottom: 1px solid var(--line);
+}
+.telem__table tbody td {
+  padding: 9px 12px; border-bottom: 1px solid var(--line);
+  color: var(--ink); vertical-align: baseline;
+}
+.telem__table tbody td:first-child { padding-left: 0; }
+.telem__table tbody tr:last-child td { border-bottom: 0; }
+.telem__phase {
+  font-family: var(--font-mono); font-size: 0.7rem; letter-spacing: 0.02em;
+  color: var(--lapis); background: rgba(39, 64, 200, 0.07);
+  border-radius: var(--radius-sm); padding: 2px 7px; white-space: nowrap;
+}
+.telem__node { font-family: var(--font-mono); font-size: 0.78rem; color: var(--ink); }
+.telem__edge { font-family: var(--font-mono); font-size: 0.74rem; color: var(--muted); }
+.telem__empty {
+  border: 1px dashed var(--line); border-radius: var(--radius);
+  padding: var(--space-4) var(--space-3); text-align: center; color: var(--muted);
+  font-size: 0.9rem; background: var(--paper); margin: 0;
+}
+@media (prefers-reduced-motion: no-preference) {
+  .telem__table tbody tr { animation: telemIn 360ms var(--ease-standard) both; }
+}
+@keyframes telemIn { from { opacity: 0; transform: translateY(-4px); } to { opacity: 1; transform: none; } }
+
 @media (prefers-reduced-motion: reduce) {
   html { scroll-behavior: auto; }
   *, *::before, *::after { animation-duration: 0.01ms !important; transition-duration: 0.01ms !important; }

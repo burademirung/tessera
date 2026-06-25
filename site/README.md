@@ -171,14 +171,14 @@ Configured by `wrangler.jsonc`:
 
 ```json
 {
-  "name": "lifecycle-site",
+  "name": "tessera-site",
   "compatibility_date": "2026-06-01",
   "pages_build_output_dir": "./dist"
 }
 ```
 
 ```sh
-wrangler pages deploy ./dist --project-name lifecycle-site
+wrangler pages deploy ./dist --project-name tessera-site
 ```
 
 ---

@@ -5,7 +5,7 @@ package ports
 import (
 	"context"
 
-	"github.com/lifecycle/control-plane/internal/domain"
+	"github.com/tessera/control-plane/internal/domain"
 )
 
 // SCIMClient pushes provisioning changes to the edge SCIM service provider.

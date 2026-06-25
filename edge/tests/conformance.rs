@@ -15,14 +15,14 @@ use serde_json::{json, Value};
 use std::fs;
 use std::path::Path;
 
-use lifecycle_edge::scim::auth::TenantCtx;
-use lifecycle_edge::scim::d1_store::Snapshot;
-use lifecycle_edge::scim::dialect::{coerce_active, normalize_patch};
-use lifecycle_edge::scim::discovery;
-use lifecycle_edge::scim::filter::parse_filter;
-use lifecycle_edge::scim::page::Page;
-use lifecycle_edge::scim::patch::apply_patch;
-use lifecycle_edge::scim::service::UserService;
+use tessera_edge::scim::auth::TenantCtx;
+use tessera_edge::scim::d1_store::Snapshot;
+use tessera_edge::scim::dialect::{coerce_active, normalize_patch};
+use tessera_edge::scim::discovery;
+use tessera_edge::scim::filter::parse_filter;
+use tessera_edge::scim::page::Page;
+use tessera_edge::scim::patch::apply_patch;
+use tessera_edge::scim::service::UserService;
 
 fn fixture(name: &str) -> Value {
     let p = Path::new(env!("CARGO_MANIFEST_DIR"))

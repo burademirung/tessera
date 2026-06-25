@@ -43,7 +43,7 @@ JWT/JWKS claim sets.
   "groups": [
     {
       "value": "e9e30dba-f08f-4109-8486-d5c6a331660a",
-      "$ref": "https://idp.lifecycle.example/scim/v2/Groups/e9e30dba-f08f-4109-8486-d5c6a331660a",
+      "$ref": "https://idp.tessera.example/scim/v2/Groups/e9e30dba-f08f-4109-8486-d5c6a331660a",
       "display": "Engineering"
     }
   ],
@@ -62,7 +62,7 @@ JWT/JWKS claim sets.
     "resourceType": "User",
     "created": "2026-06-24T10:00:00Z",
     "lastModified": "2026-06-24T11:30:00Z",
-    "location": "https://idp.lifecycle.example/scim/v2/Users/2819c223-7f76-453a-919d-413861904646",
+    "location": "https://idp.tessera.example/scim/v2/Users/2819c223-7f76-453a-919d-413861904646",
     "version": "W/\"3\""
   }
 }
@@ -110,7 +110,7 @@ filtered queries and kept consistent with `body` on every write.
   "members": [
     {
       "value": "2819c223-7f76-453a-919d-413861904646",
-      "$ref": "https://idp.lifecycle.example/scim/v2/Users/2819c223-7f76-453a-919d-413861904646",
+      "$ref": "https://idp.tessera.example/scim/v2/Users/2819c223-7f76-453a-919d-413861904646",
       "display": "Alice Liddell"
     }
   ],
@@ -118,7 +118,7 @@ filtered queries and kept consistent with `body` on every write.
     "resourceType": "Group",
     "created": "2026-06-24T09:00:00Z",
     "lastModified": "2026-06-24T09:00:00Z",
-    "location": "https://idp.lifecycle.example/scim/v2/Groups/e9e30dba-f08f-4109-8486-d5c6a331660a",
+    "location": "https://idp.tessera.example/scim/v2/Groups/e9e30dba-f08f-4109-8486-d5c6a331660a",
     "version": "W/\"1\""
   }
 }
@@ -436,9 +436,9 @@ Used for internal service-to-service calls within the Tessera trust boundary.
 **Payload**
 ```json
 {
-  "iss": "https://idp.lifecycle.example",
+  "iss": "https://idp.tessera.example",
   "sub": "service:control-plane",
-  "aud": "https://idp.lifecycle.example",
+  "aud": "https://idp.tessera.example",
   "iat": 1750000000,
   "nbf": 1750000000,
   "exp": 1750003600
@@ -474,8 +474,8 @@ Presented to cloud STS endpoints (AWS `AssumeRoleWithWebIdentity`, Azure
 **Payload — AWS example**
 ```json
 {
-  "iss": "https://idp.lifecycle.example",
-  "sub": "arn:aws:iam::123456789012:role/lifecycle-worker",
+  "iss": "https://idp.tessera.example",
+  "sub": "arn:aws:iam::123456789012:role/tessera-worker",
   "aud": "sts.amazonaws.com",
   "iat": 1750000000,
   "exp": 1750000900

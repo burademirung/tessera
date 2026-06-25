@@ -87,15 +87,17 @@ export function IdentityGraph({ posterSrc }: { posterSrc: string }) {
       </div>
       {/* Live controls + data table render BELOW the reserved box (no CLS impact). */}
       {live && (
-        <div
-          style={{
-            display: 'flex',
-            gap: 'var(--space-2)',
-            alignItems: 'center',
-            marginTop: 'var(--space-2)',
-          }}
-        >
-          <button type="button" onClick={() => setPaused(!paused)} aria-pressed={paused}>
+        <div className="demo-bar">
+          <span className={`demo-live ${paused ? 'demo-live--off' : 'demo-live--on'}`}>
+            <span className="demo-live__dot" aria-hidden="true" />
+            {paused ? 'Paused' : 'Live · streaming'}
+          </span>
+          <button
+            type="button"
+            className="demo-btn demo-btn--ghost"
+            onClick={() => setPaused(!paused)}
+            aria-pressed={paused}
+          >
             {paused ? 'Resume live telemetry' : 'Pause live telemetry'}
           </button>
           <RunDemoButton />

@@ -3,7 +3,7 @@ package federation
 import "testing"
 
 func TestBuildAWSExchange(t *testing.T) {
-	in, err := BuildAWSExchange("arn:aws:iam::123456789012:role/demo", "lifecycle-demo", "header.payload.sig")
+	in, err := BuildAWSExchange("arn:aws:iam::123456789012:role/demo", "tessera-demo", "header.payload.sig")
 	if err != nil {
 		t.Fatalf("BuildAWSExchange: %v", err)
 	}

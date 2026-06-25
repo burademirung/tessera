@@ -51,7 +51,7 @@ impl CloudAudiences {
         CloudAudiences {
             aws: "sts.amazonaws.com".into(),
             azure: "api://AzureADTokenExchange".into(),
-            gcp: "//iam.googleapis.com/projects/000000000000/locations/global/workloadIdentityPools/lifecycle-pool/providers/lifecycle-oidc".into(),
+            gcp: "//iam.googleapis.com/projects/000000000000/locations/global/workloadIdentityPools/tessera-pool/providers/tessera-oidc".into(),
         }
     }
 }
@@ -123,7 +123,7 @@ mod tests {
         CloudAudiences {
             aws: "sts.amazonaws.com".into(),
             azure: "api://AzureADTokenExchange".into(),
-            gcp: "//iam.googleapis.com/projects/123456789012/locations/global/workloadIdentityPools/lifecycle-pool/providers/lifecycle-oidc".into(),
+            gcp: "//iam.googleapis.com/projects/123456789012/locations/global/workloadIdentityPools/tessera-pool/providers/tessera-oidc".into(),
         }
     }
 
@@ -153,14 +153,14 @@ mod tests {
         let c = build_federation_claims(
             &cfg,
             Cloud::Gcp,
-            "https://idp.lifecycle.example",
+            "https://idp.tessera.example",
             "tenant-a:wl-1",
             NOW,
             900,
         )
         .unwrap();
         assert_eq!(c["aud"], cfg.gcp);
-        assert_eq!(c["iss"], "https://idp.lifecycle.example");
+        assert_eq!(c["iss"], "https://idp.tessera.example");
         assert_eq!(c["sub"], "tenant-a:wl-1");
         assert_eq!(c["exp"].as_u64().unwrap(), NOW + 900);
         assert!(
@@ -176,7 +176,7 @@ mod tests {
         assert!(build_federation_claims(
             &cfg,
             Cloud::Aws,
-            "https://idp.lifecycle.example",
+            "https://idp.tessera.example",
             &long,
             NOW,
             900
@@ -190,7 +190,7 @@ mod tests {
         assert!(build_federation_claims(
             &cfg,
             Cloud::Gcp,
-            "https://idp.lifecycle.example",
+            "https://idp.tessera.example",
             "s",
             NOW,
             86_401

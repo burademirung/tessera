@@ -3,7 +3,7 @@ package lifecycle
 import (
 	"sort"
 
-	"github.com/lifecycle/control-plane/internal/domain"
+	"github.com/tessera/control-plane/internal/domain"
 )
 
 // MoverDiff is the recalculated set difference for a role change.

@@ -60,7 +60,7 @@ Create `edge/Cargo.toml`:
 name = "edge"
 version = "0.1.0"
 edition = "2021"
-authors = ["Lifecycle"]
+authors = ["Tessera"]
 
 [lib]
 crate-type = ["cdylib", "rlib"]
@@ -112,7 +112,7 @@ rustflags = ['--cfg', 'getrandom_backend="wasm_js"']
 Create `edge/wrangler.jsonc`:
 ```jsonc
 {
-  "name": "lifecycle-edge",
+  "name": "tessera-edge",
   "main": "build/worker/shim.mjs",
   "compatibility_date": "2026-06-01",
   "build": {
@@ -197,7 +197,7 @@ mod worker_entry {
 
     #[event(fetch)]
     async fn fetch(_req: Request, _env: Env, _ctx: Context) -> Result<Response> {
-        Response::ok("lifecycle-edge: ok")
+        Response::ok("tessera-edge: ok")
     }
 }
 ```
@@ -285,8 +285,8 @@ mod tests {
     fn params() -> VerifyParams {
         VerifyParams {
             alg: VerifyAlg::EdDSA,
-            issuer: "https://idp.lifecycle.example".into(),
-            audience: "lifecycle-edge".into(),
+            issuer: "https://idp.tessera.example".into(),
+            audience: "tessera-edge".into(),
             expected_typ: Some("at+jwt".into()),
             leeway_secs: 60,
         }
@@ -295,8 +295,8 @@ mod tests {
     fn good_claims() -> serde_json::Value {
         json!({
             "sub": "user-1",
-            "iss": "https://idp.lifecycle.example",
-            "aud": "lifecycle-edge",
+            "iss": "https://idp.tessera.example",
+            "aud": "tessera-edge",
             "exp": NOW + 300,
             "nbf": NOW - 10,
             "iat": NOW - 10
@@ -309,7 +309,7 @@ mod tests {
         let token = sign(good_claims(), Some("at+jwt"));
         let c = verify_jwt(&token, &dk, &params(), NOW).unwrap();
         assert_eq!(c.sub, "user-1");
-        assert_eq!(c.aud, vec!["lifecycle-edge".to_string()]);
+        assert_eq!(c.aud, vec!["tessera-edge".to_string()]);
     }
 
     #[test]
@@ -618,14 +618,14 @@ mod tests {
     fn signed_internal_token_verifies_with_our_verifier() {
         let s = signer();
         let token = s
-            .sign_internal("user-9", "https://idp.lifecycle.example", "lifecycle-internal", NOW, 600, "at+jwt")
+            .sign_internal("user-9", "https://idp.tessera.example", "tessera-internal", NOW, 600, "at+jwt")
             .unwrap();
         let pub_pem = s.verifying.to_public_key_pem(Default::default()).unwrap();
         let dk = DecodingKey::from_ed_pem(pub_pem.as_bytes()).unwrap();
         let params = VerifyParams {
             alg: VerifyAlg::EdDSA,
-            issuer: "https://idp.lifecycle.example".into(),
-            audience: "lifecycle-internal".into(),
+            issuer: "https://idp.tessera.example".into(),
+            audience: "tessera-internal".into(),
             expected_typ: Some("at+jwt".into()),
             leeway_secs: 60,
         };
@@ -650,7 +650,7 @@ mod tests {
     fn token_carries_kid_in_header() {
         let s = signer();
         let token = s
-            .sign_internal("u", "https://idp.lifecycle.example", "lifecycle-internal", NOW, 600, "at+jwt")
+            .sign_internal("u", "https://idp.tessera.example", "tessera-internal", NOW, 600, "at+jwt")
             .unwrap();
         let header = jsonwebtoken::decode_header(&token).unwrap();
         assert_eq!(header.kid.as_deref(), Some("int-2026-06"));
@@ -801,7 +801,7 @@ mod tests {
         CloudAudiences {
             aws: "sts.amazonaws.com".into(),
             azure: "api://AzureADTokenExchange".into(),
-            gcp: "//iam.googleapis.com/projects/123456789012/locations/global/workloadIdentityPools/lifecycle-pool/providers/lifecycle-oidc".into(),
+            gcp: "//iam.googleapis.com/projects/123456789012/locations/global/workloadIdentityPools/tessera-pool/providers/tessera-oidc".into(),
         }
     }
 
@@ -822,9 +822,9 @@ mod tests {
     #[test]
     fn builds_claims_with_correct_aud_and_no_azp() {
         let cfg = auds();
-        let c = build_federation_claims(&cfg, Cloud::Gcp, "https://idp.lifecycle.example", "tenant-a:wl-1", NOW, 900).unwrap();
+        let c = build_federation_claims(&cfg, Cloud::Gcp, "https://idp.tessera.example", "tenant-a:wl-1", NOW, 900).unwrap();
         assert_eq!(c["aud"], cfg.gcp);
-        assert_eq!(c["iss"], "https://idp.lifecycle.example");
+        assert_eq!(c["iss"], "https://idp.tessera.example");
         assert_eq!(c["sub"], "tenant-a:wl-1");
         assert_eq!(c["exp"].as_u64().unwrap(), NOW + 900);
         assert!(c.get("azp").is_none(), "AWS treats azp as audience; must omit");
@@ -834,14 +834,14 @@ mod tests {
     fn rejects_sub_over_127_chars() {
         let cfg = auds();
         let long = "x".repeat(128);
-        assert!(build_federation_claims(&cfg, Cloud::Aws, "https://idp.lifecycle.example", &long, NOW, 900).is_err());
+        assert!(build_federation_claims(&cfg, Cloud::Aws, "https://idp.tessera.example", &long, NOW, 900).is_err());
     }
 
     #[test]
     fn rejects_ttl_over_24h_for_gcp_limit() {
         let cfg = auds();
         // GCP requires exp - iat <= 24h.
-        assert!(build_federation_claims(&cfg, Cloud::Gcp, "https://idp.lifecycle.example", "s", NOW, 86_401).is_err());
+        assert!(build_federation_claims(&cfg, Cloud::Gcp, "https://idp.tessera.example", "s", NOW, 86_401).is_err());
     }
 
     #[test]
@@ -1250,17 +1250,17 @@ mod tests {
     use super::*;
 
     fn cfg() -> IssuerConfig {
-        IssuerConfig { issuer: "https://idp.lifecycle.example".into() }
+        IssuerConfig { issuer: "https://idp.tessera.example".into() }
     }
 
     #[test]
     fn issuer_is_byte_identical_and_endpoints_derive_from_it() {
         let doc = openid_configuration(&cfg());
-        assert_eq!(doc["issuer"], "https://idp.lifecycle.example");
-        assert_eq!(doc["jwks_uri"], "https://idp.lifecycle.example/jwks");
-        assert_eq!(doc["authorization_endpoint"], "https://idp.lifecycle.example/authorize");
-        assert_eq!(doc["token_endpoint"], "https://idp.lifecycle.example/token");
-        assert_eq!(doc["introspection_endpoint"], "https://idp.lifecycle.example/introspect");
+        assert_eq!(doc["issuer"], "https://idp.tessera.example");
+        assert_eq!(doc["jwks_uri"], "https://idp.tessera.example/jwks");
+        assert_eq!(doc["authorization_endpoint"], "https://idp.tessera.example/authorize");
+        assert_eq!(doc["token_endpoint"], "https://idp.tessera.example/token");
+        assert_eq!(doc["introspection_endpoint"], "https://idp.tessera.example/introspect");
     }
 
     #[test]
@@ -1278,7 +1278,7 @@ mod tests {
     #[test]
     fn validate_discovery_enforces_issuer_match() {
         let doc = openid_configuration(&cfg());
-        assert!(validate_discovery(&doc, "https://idp.lifecycle.example").is_ok());
+        assert!(validate_discovery(&doc, "https://idp.tessera.example").is_ok());
         assert!(validate_discovery(&doc, "https://evil.example").is_err());
     }
 }
@@ -1378,7 +1378,7 @@ mod worker_entry {
     use super::*;
     use worker::*;
 
-    const ISSUER: &str = "https://idp.lifecycle.example";
+    const ISSUER: &str = "https://idp.tessera.example";
 
     #[event(start)]
     fn start() {
@@ -1500,8 +1500,8 @@ mod tests {
     fn cfg() -> RpConfig {
         RpConfig {
             authorization_endpoint: "https://okta.example/oauth2/v1/authorize".into(),
-            client_id: "lifecycle-rp".into(),
-            redirect_uri: "https://idp.lifecycle.example/callback".into(),
+            client_id: "tessera-rp".into(),
+            redirect_uri: "https://idp.tessera.example/callback".into(),
             scope: "openid profile email".into(),
         }
     }
@@ -1527,7 +1527,7 @@ mod tests {
         assert!(req.authorize_url.contains("code_challenge_method=S256"));
         assert!(req.authorize_url.contains("state=st-abc"));
         assert!(req.authorize_url.contains("nonce=nc-xyz"));
-        assert!(req.authorize_url.contains("client_id=lifecycle-rp"));
+        assert!(req.authorize_url.contains("client_id=tessera-rp"));
         assert!(!req.authorize_url.contains("code_challenge_method=plain"));
     }
 
@@ -2143,12 +2143,12 @@ mod tests {
     }
 
     fn params() -> DpopParams {
-        DpopParams { htm: "POST".into(), htu: "https://idp.lifecycle.example/token".into(), max_iat_skew: 60, expected_ath: None }
+        DpopParams { htm: "POST".into(), htu: "https://idp.tessera.example/token".into(), max_iat_skew: 60, expected_ath: None }
     }
 
     #[test]
     fn accepts_a_valid_proof_and_returns_jkt() {
-        let (proof, jkt) = make_proof("POST", "https://idp.lifecycle.example/token", NOW, "jti-1", None);
+        let (proof, jkt) = make_proof("POST", "https://idp.tessera.example/token", NOW, "jti-1", None);
         let mut never = |_: &str| false;
         let got = verify_dpop(&proof, &params(), NOW, &mut never).unwrap();
         assert_eq!(got, jkt);
@@ -2159,7 +2159,7 @@ mod tests {
         let sk = ed25519_dalek::SigningKey::from_bytes(&[9u8; 32]);
         let x = b64url_encode(sk.verifying_key().as_bytes());
         let header = json!({ "typ": "jwt", "alg": "EdDSA", "jwk": { "kty":"OKP","crv":"Ed25519","x": x } });
-        let claims = json!({ "htm":"POST","htu":"https://idp.lifecycle.example/token","iat":NOW,"jti":"j" });
+        let claims = json!({ "htm":"POST","htu":"https://idp.tessera.example/token","iat":NOW,"jti":"j" });
         let h = b64url_encode(serde_json::to_vec(&header).unwrap().as_slice());
         let p = b64url_encode(serde_json::to_vec(&claims).unwrap().as_slice());
         use ed25519_dalek::Signer;
@@ -2171,7 +2171,7 @@ mod tests {
 
     #[test]
     fn rejects_htm_or_htu_mismatch() {
-        let (proof, _) = make_proof("GET", "https://idp.lifecycle.example/token", NOW, "j", None);
+        let (proof, _) = make_proof("GET", "https://idp.tessera.example/token", NOW, "j", None);
         let mut never = |_: &str| false;
         assert!(verify_dpop(&proof, &params(), NOW, &mut never).is_err());
         let (proof2, _) = make_proof("POST", "https://evil.example/token", NOW, "j", None);
@@ -2180,14 +2180,14 @@ mod tests {
 
     #[test]
     fn rejects_stale_iat() {
-        let (proof, _) = make_proof("POST", "https://idp.lifecycle.example/token", NOW - 1000, "j", None);
+        let (proof, _) = make_proof("POST", "https://idp.tessera.example/token", NOW - 1000, "j", None);
         let mut never = |_: &str| false;
         assert!(verify_dpop(&proof, &params(), NOW, &mut never).is_err());
     }
 
     #[test]
     fn rejects_replayed_jti() {
-        let (proof, _) = make_proof("POST", "https://idp.lifecycle.example/token", NOW, "dup", None);
+        let (proof, _) = make_proof("POST", "https://idp.tessera.example/token", NOW, "dup", None);
         let mut always = |_: &str| true; // jti already seen
         assert!(verify_dpop(&proof, &params(), NOW, &mut always).is_err());
     }
@@ -2196,10 +2196,10 @@ mod tests {
     fn enforces_ath_when_expected() {
         let mut p = params();
         p.expected_ath = Some("expected-hash".into());
-        let (proof_no_ath, _) = make_proof("POST", "https://idp.lifecycle.example/token", NOW, "j", None);
+        let (proof_no_ath, _) = make_proof("POST", "https://idp.tessera.example/token", NOW, "j", None);
         let mut never = |_: &str| false;
         assert!(verify_dpop(&proof_no_ath, &p, NOW, &mut never).is_err());
-        let (proof_ath, _) = make_proof("POST", "https://idp.lifecycle.example/token", NOW, "j2", Some("expected-hash"));
+        let (proof_ath, _) = make_proof("POST", "https://idp.tessera.example/token", NOW, "j2", Some("expected-hash"));
         assert!(verify_dpop(&proof_ath, &p, NOW, &mut never).is_ok());
     }
 
@@ -2392,13 +2392,13 @@ mod tests {
     use serde_json::json;
 
     fn allow() -> IssuerAllowList {
-        new_allow_list(&["https://okta.example", "https://entra.example", "https://idp.lifecycle.example"])
+        new_allow_list(&["https://okta.example", "https://entra.example", "https://idp.tessera.example"])
     }
 
     #[test]
     fn allows_an_anchored_https_issuer_host() {
         assert!(check_outbound_url(&allow(), "https://okta.example/.well-known/openid-configuration").is_ok());
-        assert!(check_outbound_url(&allow(), "https://idp.lifecycle.example/jwks").is_ok());
+        assert!(check_outbound_url(&allow(), "https://idp.tessera.example/jwks").is_ok());
     }
 
     #[test]
@@ -2611,7 +2611,7 @@ cd /Users/vladinirkamenev/Documents/projects/lifecycle/edge
 echo "0000000000000000000000000000000000000000000000000000000000000007" | npx -y wrangler@4 secret put INTERNAL_ED25519_SEED --local
 npx -y wrangler@4 dev
 # In another shell:
-#   curl -s localhost:8787/.well-known/openid-configuration | jq .issuer   -> "https://idp.lifecycle.example"
+#   curl -s localhost:8787/.well-known/openid-configuration | jq .issuer   -> "https://idp.tessera.example"
 #   curl -s localhost:8787/jwks | jq '.keys[].alg'                          -> "EdDSA" (RSA once attached)
 ```
 Expected: discovery returns the byte-identical issuer; `/jwks` validates invariants and returns the EdDSA key.
@@ -2823,7 +2823,7 @@ pub fn render_opa_event(ev: &DecisionEvent) -> Value {
         "input": mask(&ev.input),
         "result": ev.result,
         "timestamp": ev.timestamp,
-        "labels": { "engine": "regorus", "pep": "lifecycle-edge" },
+        "labels": { "engine": "regorus", "pep": "tessera-edge" },
     })
 }
 ```

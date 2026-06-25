@@ -1,4 +1,4 @@
-# Lifecycle — Identity Engine & Living Reference Site
+# Tessera — Identity Engine & Living Reference Site
 
 **Design spec** · 2026-06-24 · **Status:** Revised after standards/best-practice research pass
 
@@ -12,7 +12,7 @@
 
 ## 1. Purpose & Goals
 
-Build **Lifecycle**: a bespoke, working identity engine that exercises *every* technology from the
+Build **Tessera**: a bespoke, working identity engine that exercises *every* technology from the
 Identity Engineer requirement, plus a light, premium reference website (deployed on Cloudflare) that
 explains each technology, the standards it follows, and the best practices applied — with a moving 3D
 visualization of the whole solution driven by **real telemetry**.

@@ -32,7 +32,7 @@ locals {
 }
 
 resource "aws_iam_role" "ci_deploy" {
-  name                 = "lifecycle-ci-deploy"
+  name                 = "tessera-ci-deploy"
   assume_role_policy   = local.ci_trust_policy
   max_session_duration = 3600
 }
@@ -40,14 +40,14 @@ resource "aws_iam_role" "ci_deploy" {
 # ---- GCP: GitHub WIF pool/provider + direct binding ----
 resource "google_iam_workload_identity_pool" "github" {
   project                   = var.gcp_project_id
-  workload_identity_pool_id = "lifecycle-ci-pool"
+  workload_identity_pool_id = "tessera-ci-pool"
   display_name              = "lifecycle ci"
 }
 
 resource "google_iam_workload_identity_pool_provider" "github" {
   project                            = var.gcp_project_id
   workload_identity_pool_id          = google_iam_workload_identity_pool.github.workload_identity_pool_id
-  workload_identity_pool_provider_id = "lifecycle-ci-oidc"
+  workload_identity_pool_provider_id = "tessera-ci-oidc"
 
   attribute_mapping = {
     "google.subject"       = "assertion.sub"
@@ -65,7 +65,7 @@ resource "google_iam_workload_identity_pool_provider" "github" {
 
   oidc {
     issuer_uri        = local.github_issuer
-    allowed_audiences = ["https://iam.googleapis.com/projects/${var.gcp_project_number}/locations/global/workloadIdentityPools/lifecycle-ci-pool/providers/lifecycle-ci-oidc"]
+    allowed_audiences = ["https://iam.googleapis.com/projects/${var.gcp_project_number}/locations/global/workloadIdentityPools/tessera-ci-pool/providers/tessera-ci-oidc"]
   }
 }
 
@@ -82,7 +82,7 @@ resource "google_project_iam_member" "ci_deploy" {
 
 # ---- Azure: app registration + GitHub FIC ----
 resource "azuread_application" "ci" {
-  display_name = "lifecycle-ci-deploy"
+  display_name = "tessera-ci-deploy"
 }
 
 resource "azuread_service_principal" "ci" {
@@ -91,7 +91,7 @@ resource "azuread_service_principal" "ci" {
 
 resource "azuread_application_federated_identity_credential" "ci" {
   application_id = azuread_application.ci.id
-  display_name   = "lifecycle-ci-github"
+  display_name   = "tessera-ci-github"
   description    = "GitHub Actions CI deploy"
   issuer         = local.github_issuer
   subject        = local.ci_sub

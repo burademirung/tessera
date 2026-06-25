@@ -52,7 +52,7 @@ pub fn render_opa_event(ev: &DecisionEvent) -> Value {
         "input": mask(&ev.input),
         "result": ev.result,
         "timestamp": ev.timestamp,
-        "labels": { "engine": "regorus", "pep": "lifecycle-edge" },
+        "labels": { "engine": "regorus", "pep": "tessera-edge" },
     })
 }
 

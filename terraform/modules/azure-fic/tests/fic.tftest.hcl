@@ -20,11 +20,11 @@ mock_provider "azurerm" {}
 mock_provider "time" {}
 
 variables {
-  issuer_url            = "https://idp.lifecycle.example"
-  allowed_sub           = "lifecycle:federation:azure"
+  issuer_url            = "https://idp.tessera.example"
+  allowed_sub           = "tessera:federation:azure"
   audience              = "api://AzureADTokenExchange"
-  app_display_name      = "lifecycle-edge-federation"
-  fic_name              = "lifecycle-edge-fic"
+  app_display_name      = "tessera-edge-federation"
+  fic_name              = "tessera-edge-fic"
   role_definition_name  = "Reader"
   role_scope            = "/subscriptions/00000000-0000-0000-0000-000000000000"
   fic_propagation_delay = "60s"
@@ -35,15 +35,15 @@ run "fic_pins_exact_issuer_subject_audience" {
 
   # App registration (not a UAMI).
   assert {
-    condition     = azuread_application.edge.display_name == "lifecycle-edge-federation"
+    condition     = azuread_application.edge.display_name == "tessera-edge-federation"
     error_message = "must provision an app registration (azuread_application), not a UAMI"
   }
   assert {
-    condition     = azuread_application_federated_identity_credential.edge.issuer == "https://idp.lifecycle.example"
+    condition     = azuread_application_federated_identity_credential.edge.issuer == "https://idp.tessera.example"
     error_message = "FIC issuer must be exact"
   }
   assert {
-    condition     = azuread_application_federated_identity_credential.edge.subject == "lifecycle:federation:azure"
+    condition     = azuread_application_federated_identity_credential.edge.subject == "tessera:federation:azure"
     error_message = "FIC subject must be the EXACT sub (no wildcard)"
   }
   assert {

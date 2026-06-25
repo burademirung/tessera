@@ -5,7 +5,7 @@ This document covers every HTTP endpoint exposed by the edge worker, including t
 SCIM 2.0 service provider surface, the OIDC RP flow, the federation token mint,
 the authorization PEP, and the live-telemetry SSE stream.
 
-**Base URL:** `https://idp.lifecycle.example`
+**Base URL:** `https://idp.tessera.example`
 
 ---
 
@@ -32,7 +32,7 @@ response when secrets are unset.
 ### `GET /.well-known/openid-configuration`
 
 Returns the OIDC provider metadata document (RFC 8414). All endpoint URLs
-derive from the issuer string `https://idp.lifecycle.example`.
+derive from the issuer string `https://idp.tessera.example`.
 
 **Auth required:** No  
 **Cache-Control:** `public, max-age=300`
@@ -41,11 +41,11 @@ derive from the issuer string `https://idp.lifecycle.example`.
 
 ```json
 {
-  "issuer": "https://idp.lifecycle.example",
-  "jwks_uri": "https://idp.lifecycle.example/jwks",
-  "authorization_endpoint": "https://idp.lifecycle.example/authorize",
-  "token_endpoint": "https://idp.lifecycle.example/token",
-  "introspection_endpoint": "https://idp.lifecycle.example/introspect",
+  "issuer": "https://idp.tessera.example",
+  "jwks_uri": "https://idp.tessera.example/jwks",
+  "authorization_endpoint": "https://idp.tessera.example/authorize",
+  "token_endpoint": "https://idp.tessera.example/token",
+  "introspection_endpoint": "https://idp.tessera.example/introspect",
   "response_types_supported": ["code"],
   "grant_types_supported": ["authorization_code", "refresh_token"],
   "subject_types_supported": ["public"],
@@ -62,7 +62,7 @@ derive from the issuer string `https://idp.lifecycle.example`.
 **curl example**
 
 ```bash
-curl -s https://idp.lifecycle.example/.well-known/openid-configuration | jq .
+curl -s https://idp.tessera.example/.well-known/openid-configuration | jq .
 ```
 
 ---
@@ -110,7 +110,7 @@ returns `500`.
 **curl example**
 
 ```bash
-curl -s https://idp.lifecycle.example/jwks | jq .
+curl -s https://idp.tessera.example/jwks | jq .
 ```
 
 ---
@@ -131,13 +131,13 @@ namespace with a 300-second TTL, and redirects the browser to the upstream IdP
 
 | Header | Value |
 |---|---|
-| `Location` | `https://okta.example/oauth2/v1/authorize?response_type=code&client_id=lifecycle-rp&redirect_uri=https%3A%2F%2Fidp.lifecycle.example%2Fcallback&scope=openid+profile+email&state=<random>&nonce=<random>&code_challenge=<S256>&code_challenge_method=S256` |
+| `Location` | `https://okta.example/oauth2/v1/authorize?response_type=code&client_id=tessera-rp&redirect_uri=https%3A%2F%2Fidp.tessera.example%2Fcallback&scope=openid+profile+email&state=<random>&nonce=<random>&code_challenge=<S256>&code_challenge_method=S256` |
 
 **curl example**
 
 ```bash
 # Follow the redirect chain (browser flow):
-curl -v "https://idp.lifecycle.example/authorize"
+curl -v "https://idp.tessera.example/authorize"
 # Response will be HTTP 302 to the upstream IdP authorize endpoint.
 ```
 
@@ -179,7 +179,7 @@ Body: `invalid callback`
 
 ```bash
 # The callback is driven by the browser via upstream IdP redirect:
-curl -v "https://idp.lifecycle.example/callback?code=AUTH_CODE&state=STATE&iss=https%3A%2F%2Fokta.example"
+curl -v "https://idp.tessera.example/callback?code=AUTH_CODE&state=STATE&iss=https%3A%2F%2Fokta.example"
 ```
 
 ---
@@ -208,7 +208,7 @@ returns `200` (idempotent).
 **curl example**
 
 ```bash
-curl -s -X POST https://idp.lifecycle.example/logout \
+curl -s -X POST https://idp.tessera.example/logout \
   -H "Cookie: __Host-sid=<session-token>"
 ```
 
@@ -258,7 +258,7 @@ tokens.
 **curl example**
 
 ```bash
-curl -s -X POST https://idp.lifecycle.example/introspect \
+curl -s -X POST https://idp.tessera.example/introspect \
   -H "Authorization: Bearer $INTROSPECT_BEARER_TOKEN" \
   -H "Content-Type: application/x-www-form-urlencoded" \
   --data-urlencode "token=<opaque-session-token>"
@@ -341,7 +341,7 @@ The Rego policy enforces:
 **curl example**
 
 ```bash
-curl -s -X POST https://idp.lifecycle.example/decision \
+curl -s -X POST https://idp.tessera.example/decision \
   -H "Content-Type: application/json" \
   -d '{
     "subject": {"id": "alice", "roles": ["reader"], "tenant": "acme", "mfa": true, "device_trust": "managed"},
@@ -370,7 +370,7 @@ Bearer check). The token is signed with the cloud RSA key (`kid: cloud-2026-06`,
 ```json
 {
   "cloud": "aws",
-  "sub": "arn:aws:iam::123456789012:role/lifecycle-worker"
+  "sub": "arn:aws:iam::123456789012:role/tessera-worker"
 }
 ```
 
@@ -395,7 +395,7 @@ Bearer check). The token is signed with the cloud RSA key (`kid: cloud-2026-06`,
 }
 ```
 
-The JWT payload contains: `iss` (`https://idp.lifecycle.example`), `sub`, `aud`
+The JWT payload contains: `iss` (`https://idp.tessera.example`), `sub`, `aud`
 (cloud-specific), `iat`, `exp` (`iat + 900`). TTL is fixed at 900 seconds.
 There is no `azp` field.
 
@@ -406,22 +406,22 @@ There is no `azp` field.
 
 ```bash
 # AWS
-curl -s -X POST https://idp.lifecycle.example/federate \
+curl -s -X POST https://idp.tessera.example/federate \
   -H "Authorization: Bearer $FEDERATION_API_TOKEN" \
   -H "Content-Type: application/json" \
-  -d '{"cloud":"aws","sub":"arn:aws:iam::123456789012:role/lifecycle-worker"}'
+  -d '{"cloud":"aws","sub":"arn:aws:iam::123456789012:role/tessera-worker"}'
 
 # GCP
-curl -s -X POST https://idp.lifecycle.example/federate \
+curl -s -X POST https://idp.tessera.example/federate \
   -H "Authorization: Bearer $FEDERATION_API_TOKEN" \
   -H "Content-Type: application/json" \
-  -d '{"cloud":"gcp","sub":"lifecycle-sa@my-project.iam.gserviceaccount.com"}'
+  -d '{"cloud":"gcp","sub":"tessera-sa@my-project.iam.gserviceaccount.com"}'
 
 # Azure
-curl -s -X POST https://idp.lifecycle.example/federate \
+curl -s -X POST https://idp.tessera.example/federate \
   -H "Authorization: Bearer $FEDERATION_API_TOKEN" \
   -H "Content-Type: application/json" \
-  -d '{"cloud":"azure","sub":"lifecycle-workload"}'
+  -d '{"cloud":"azure","sub":"tessera-workload"}'
 ```
 
 ---
@@ -469,7 +469,7 @@ Returns the service provider feature matrix.
   ],
   "meta": {
     "resourceType": "ServiceProviderConfig",
-    "location": "https://idp.lifecycle.example/scim/v2/ServiceProviderConfig"
+    "location": "https://idp.tessera.example/scim/v2/ServiceProviderConfig"
   }
 }
 ```
@@ -572,7 +572,7 @@ Returns full attribute definitions for User, Group, and EnterpriseUser schemas.
     "resourceType": "User",
     "created": "2026-06-24T10:00:00Z",
     "lastModified": "2026-06-24T10:00:00Z",
-    "location": "https://idp.lifecycle.example/scim/v2/Users/2819c223-7f76-453a-919d-413861904646",
+    "location": "https://idp.tessera.example/scim/v2/Users/2819c223-7f76-453a-919d-413861904646",
     "version": "W/\"1\""
   }
 }
@@ -592,7 +592,7 @@ Returns full attribute definitions for User, Group, and EnterpriseUser schemas.
 **curl example**
 
 ```bash
-curl -s -X POST https://idp.lifecycle.example/scim/v2/Users \
+curl -s -X POST https://idp.tessera.example/scim/v2/Users \
   -H "Authorization: Bearer $SCIM_BEARER_TOKEN" \
   -H "Content-Type: application/scim+json" \
   -d '{
@@ -620,7 +620,7 @@ curl -s -X POST https://idp.lifecycle.example/scim/v2/Users \
 **curl example**
 
 ```bash
-curl -s https://idp.lifecycle.example/scim/v2/Users/2819c223-7f76-453a-919d-413861904646 \
+curl -s https://idp.tessera.example/scim/v2/Users/2819c223-7f76-453a-919d-413861904646 \
   -H "Authorization: Bearer $SCIM_BEARER_TOKEN"
 ```
 
@@ -666,15 +666,15 @@ The filter expression is length-capped at 2048 characters and depth-capped at
 
 ```bash
 # Find by userName
-curl -s "https://idp.lifecycle.example/scim/v2/Users?filter=userName+eq+%22alice%40acme.example%22" \
+curl -s "https://idp.tessera.example/scim/v2/Users?filter=userName+eq+%22alice%40acme.example%22" \
   -H "Authorization: Bearer $SCIM_BEARER_TOKEN"
 
 # Find by externalId
-curl -s "https://idp.lifecycle.example/scim/v2/Users?filter=externalId+eq+%22okta-00u1abc%22" \
+curl -s "https://idp.tessera.example/scim/v2/Users?filter=externalId+eq+%22okta-00u1abc%22" \
   -H "Authorization: Bearer $SCIM_BEARER_TOKEN"
 
 # Compound filter
-curl -s "https://idp.lifecycle.example/scim/v2/Users?filter=active+eq+%22true%22+and+displayName+pr" \
+curl -s "https://idp.tessera.example/scim/v2/Users?filter=active+eq+%22true%22+and+displayName+pr" \
   -H "Authorization: Bearer $SCIM_BEARER_TOKEN"
 ```
 
@@ -693,7 +693,7 @@ returned in the response.
 **curl example**
 
 ```bash
-curl -s -X PUT https://idp.lifecycle.example/scim/v2/Users/2819c223-7f76-453a-919d-413861904646 \
+curl -s -X PUT https://idp.tessera.example/scim/v2/Users/2819c223-7f76-453a-919d-413861904646 \
   -H "Authorization: Bearer $SCIM_BEARER_TOKEN" \
   -H "Content-Type: application/scim+json" \
   -H "If-Match: W/\"1\"" \
@@ -739,7 +739,7 @@ none. Supports `add`, `replace`, and `remove`. The engine handles:
 **curl example**
 
 ```bash
-curl -s -X PATCH https://idp.lifecycle.example/scim/v2/Users/2819c223-7f76-453a-919d-413861904646 \
+curl -s -X PATCH https://idp.tessera.example/scim/v2/Users/2819c223-7f76-453a-919d-413861904646 \
   -H "Authorization: Bearer $SCIM_BEARER_TOKEN" \
   -H "Content-Type: application/scim+json" \
   -d '{
@@ -763,7 +763,7 @@ Permanently removes the user row from D1. Okta and Entra prefer soft-delete
 **curl example**
 
 ```bash
-curl -s -X DELETE https://idp.lifecycle.example/scim/v2/Users/2819c223-7f76-453a-919d-413861904646 \
+curl -s -X DELETE https://idp.tessera.example/scim/v2/Users/2819c223-7f76-453a-919d-413861904646 \
   -H "Authorization: Bearer $SCIM_BEARER_TOKEN"
 ```
 
@@ -848,7 +848,7 @@ data: {"v":1,"id":"3","ts":1750000003000,"node":"aws","edge":"edge-aws","phase":
 **Reconnection with replay**
 
 ```bash
-curl -N https://idp.lifecycle.example/api/telemetry/stream \
+curl -N https://idp.tessera.example/api/telemetry/stream \
   -H "Last-Event-ID: 42"
 # The DO replays all events with id > 42 before streaming live events.
 ```
@@ -878,7 +878,7 @@ federate → deprovision) for the live 3D graph visualization.
 **curl example**
 
 ```bash
-curl -s -X POST https://idp.lifecycle.example/api/telemetry/demo
+curl -s -X POST https://idp.tessera.example/api/telemetry/demo
 ```
 
 ---

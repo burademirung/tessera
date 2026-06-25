@@ -3,7 +3,7 @@ package nhi
 import (
 	"testing"
 
-	"github.com/lifecycle/control-plane/internal/domain"
+	"github.com/tessera/control-plane/internal/domain"
 )
 
 func TestOwnedBy(t *testing.T) {

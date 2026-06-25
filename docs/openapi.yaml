@@ -11,7 +11,7 @@ info:
     (`application/scim+json`); see docs/API.md §9 for the full SCIM reference.
 
 servers:
-  - url: https://idp.lifecycle.example
+  - url: https://idp.tessera.example
     description: Production edge worker
 
 security: []   # Each operation declares its own requirement
@@ -49,19 +49,19 @@ components:
       properties:
         issuer:
           type: string
-          example: "https://idp.lifecycle.example"
+          example: "https://idp.tessera.example"
         jwks_uri:
           type: string
-          example: "https://idp.lifecycle.example/jwks"
+          example: "https://idp.tessera.example/jwks"
         authorization_endpoint:
           type: string
-          example: "https://idp.lifecycle.example/authorize"
+          example: "https://idp.tessera.example/authorize"
         token_endpoint:
           type: string
-          example: "https://idp.lifecycle.example/token"
+          example: "https://idp.tessera.example/token"
         introspection_endpoint:
           type: string
-          example: "https://idp.lifecycle.example/introspect"
+          example: "https://idp.tessera.example/introspect"
         response_types_supported:
           type: array
           items:
@@ -257,7 +257,7 @@ components:
           type: string
           maxLength: 127
           description: "Subject claim for the federated token"
-          example: "arn:aws:iam::123456789012:role/lifecycle-worker"
+          example: "arn:aws:iam::123456789012:role/tessera-worker"
 
     FederateResponse:
       type: object
@@ -338,7 +338,7 @@ paths:
       summary: OpenID Connect discovery document
       description: |
         RFC 8414 provider metadata. All endpoint URLs derive from the issuer
-        `https://idp.lifecycle.example`. Cached for 300 seconds.
+        `https://idp.tessera.example`. Cached for 300 seconds.
       security: []
       responses:
         "200":
@@ -580,17 +580,17 @@ paths:
                 summary: AWS STS
                 value:
                   cloud: "aws"
-                  sub: "arn:aws:iam::123456789012:role/lifecycle-worker"
+                  sub: "arn:aws:iam::123456789012:role/tessera-worker"
               azure:
                 summary: Azure AD
                 value:
                   cloud: "azure"
-                  sub: "lifecycle-workload"
+                  sub: "tessera-workload"
               gcp:
                 summary: GCP WIF
                 value:
                   cloud: "gcp"
-                  sub: "lifecycle-sa@my-project.iam.gserviceaccount.com"
+                  sub: "tessera-sa@my-project.iam.gserviceaccount.com"
       responses:
         "200":
           description: Signed JWT

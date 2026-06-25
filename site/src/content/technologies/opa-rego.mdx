@@ -40,7 +40,7 @@ bestPractices:
     sourceUrl: https://github.com/microsoft/regorus
 ---
 
-Policy-as-code in Lifecycle is **authored** as OPA Rego v1 (OPA 1.0, Jan 2025,
+Policy-as-code in Tessera is **authored** as OPA Rego v1 (OPA 1.0, Jan 2025,
 where `if` and `contains` are mandatory) and unit-tested with `opa test`, Regal
 lint, and `conftest` over Terraform plan JSON. But at runtime the edge cannot nest
 OPA-compiled-WASM inside a V8 Worker, so evaluation is done by **Regorus** — a

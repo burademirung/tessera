@@ -36,7 +36,7 @@ const stack = [
 ];
 
 // ── USAGE — copy-pasteable, real (docs/API.md). Host = the OIDC issuer. ─────
-const HOST = 'https://idp.lifecycle.example';
+const HOST = 'https://idp.tessera.example';
 const usage = [
   {
     id: 'discovery',
@@ -75,7 +75,7 @@ const usage = [
     reqLang: 'bash',
     res: `HTTP/2 302
 location: https://okta.example/oauth2/v1/authorize
-  ?response_type=code&client_id=lifecycle-rp
+  ?response_type=code&client_id=tessera-rp
   &redirect_uri=${HOST}/callback
   &scope=openid+profile+email
   &state=<rnd>&nonce=<rnd>
@@ -88,7 +88,7 @@ location: https://okta.example/oauth2/v1/authorize
     req: `curl -X POST ${HOST}/federate \\
   -H "authorization: Bearer $FEDERATION_API_TOKEN" \\
   -H "content-type: application/json" \\
-  -d '{"cloud":"aws","sub":"arn:aws:iam::123456789012:role/lifecycle-worker"}'`,
+  -d '{"cloud":"aws","sub":"arn:aws:iam::123456789012:role/tessera-worker"}'`,
     reqLang: 'bash',
     res: `{ "token": "eyJhbGciOiJSUzI1NiIsImtpZCI6ImNsb3VkLTIwMjYtMDYi...<RS256 JWT>" }`,
   },

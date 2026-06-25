@@ -6,8 +6,8 @@ import (
 	"context"
 	"fmt"
 
-	"github.com/lifecycle/control-plane/internal/domain"
-	"github.com/lifecycle/control-plane/internal/ports"
+	"github.com/tessera/control-plane/internal/domain"
+	"github.com/tessera/control-plane/internal/ports"
 )
 
 // ReconcileResult is the diff between desired and observed SCIM state.

@@ -23,12 +23,12 @@ mock_provider "cloudflare" {}
 mock_provider "time" {}
 
 variables {
-  edge_issuer_url       = "https://idp.lifecycle.example"
-  edge_issuer_host_path = "idp.lifecycle.example"
-  allowed_sub           = "lifecycle:federation:demo"
+  edge_issuer_url       = "https://idp.tessera.example"
+  edge_issuer_host_path = "idp.tessera.example"
+  allowed_sub           = "tessera:federation:demo"
   aws_audience          = "sts.amazonaws.com"
   azure_audience        = "api://AzureADTokenExchange"
-  gcp_audience          = "//iam.googleapis.com/projects/123456789012/locations/global/workloadIdentityPools/lifecycle-pool/providers/lifecycle-oidc"
+  gcp_audience          = "//iam.googleapis.com/projects/123456789012/locations/global/workloadIdentityPools/tessera-pool/providers/tessera-oidc"
   aws_region            = "us-east-1"
   azure_tenant_id       = "00000000-0000-0000-0000-000000000000"
   gcp_project_id        = "ident-fed-demo"
@@ -40,7 +40,7 @@ run "root_plans_clean" {
   command = plan
   # The scaffold wires all three modules; a clean plan proves providers + backend wiring parse.
   assert {
-    condition     = var.allowed_sub == "lifecycle:federation:demo"
+    condition     = var.allowed_sub == "tessera:federation:demo"
     error_message = "root variables must thread through to the plan"
   }
 }

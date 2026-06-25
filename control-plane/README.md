@@ -192,7 +192,7 @@ go build ./cmd/offboard
 go build ./cmd/access-review
 ```
 
-The Go module is `github.com/lifecycle/control-plane` (Go 1.23). There are no external dependencies — all packages are standard library. Real cloud SDK and edge API adapters are not yet present in the codebase (Phase 6 TODO); the `cmd/` binaries are composition roots that print a log line and exit cleanly with nil adapters during development.
+The Go module is `github.com/tessera/control-plane` (Go 1.23). There are no external dependencies — all packages are standard library. Real cloud SDK and edge API adapters are not yet present in the codebase (Phase 6 TODO); the `cmd/` binaries are composition roots that print a log line and exit cleanly with nil adapters during development.
 
 ---
 

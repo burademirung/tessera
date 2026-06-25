@@ -1829,7 +1829,7 @@ jobs:
           accountId: ${{ vars.CLOUDFLARE_ACCOUNT_ID }}
           wranglerVersion: '4.103.0'
           workingDirectory: site
-          command: pages deploy ./dist --project-name lifecycle-site
+          command: pages deploy ./dist --project-name tessera-site
 ```
 
 - [ ] **Step 3: Apply the same conversion checklist to each remaining earlier workflow**

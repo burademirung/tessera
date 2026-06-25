@@ -31,7 +31,7 @@ IdP (Okta / Entra)          Cloud (AWS / GCP / Azure)
        │  SCIM provisioning          │  OIDC web-identity
        ▼                             ▼
 ┌──────────────────────────────────────────────┐
-│          lifecycle-edge  (Worker)            │
+│          tessera-edge  (Worker)            │
 │  /federate  /introspect  /authz  /scim  ...  │
 │  Rust/WASM · Regorus (OPA-compatible Rego)   │
 │  Durable Object: SessionStore                │
@@ -78,7 +78,7 @@ All secrets are set with `wrangler secret put <NAME>`. The Worker fails closed
 (returns 401 or 500) if any required secret is absent — there is no graceful
 degradation.
 
-### Worker Secrets (`lifecycle-edge`)
+### Worker Secrets (`tessera-edge`)
 
 | Secret | Description | Impact if missing |
 |--------|-------------|-------------------|
@@ -138,18 +138,18 @@ wrangler secret list
 Stream live invocation logs for the edge Worker:
 
 ```sh
-wrangler tail lifecycle-edge
+wrangler tail tessera-edge
 ```
 
 Stream Pages deployment logs:
 
 ```sh
-wrangler pages deployment tail lifecycle-site
+wrangler pages deployment tail tessera-site
 ```
 
 ### Cloudflare Dashboard
 
-Workers → **lifecycle-edge** → **Logs** tab — persisted invocation errors, cold
+Workers → **tessera-edge** → **Logs** tab — persisted invocation errors, cold
 starts, and exception traces.
 
 ### D1 Audit Log
@@ -479,7 +479,7 @@ gh workflow run control-plane-cron.yml \
 
 ### Terraform State Backend (Cloudflare R2)
 
-State is stored in R2 bucket `lifecycle-tfstate`. R2 credentials go into
+State is stored in R2 bucket `tessera-tfstate`. R2 credentials go into
 `AWS_ACCESS_KEY_ID` and `AWS_SECRET_ACCESS_KEY` (S3-compat API):
 
 ```sh
@@ -489,13 +489,13 @@ export R2_ACCOUNT_ID=<cloudflare-account-id>
 
 # Federation state
 terraform -chdir=terraform init \
-  -backend-config="bucket=lifecycle-tfstate" \
+  -backend-config="bucket=tessera-tfstate" \
   -backend-config="key=federation/terraform.tfstate" \
   -backend-config="endpoints={s3=\"https://${R2_ACCOUNT_ID}.r2.cloudflarestorage.com\"}"
 
 # Bootstrap state
 terraform -chdir=bootstrap init \
-  -backend-config="bucket=lifecycle-tfstate" \
+  -backend-config="bucket=tessera-tfstate" \
   -backend-config="key=bootstrap/terraform.tfstate" \
   -backend-config="endpoints={s3=\"https://${R2_ACCOUNT_ID}.r2.cloudflarestorage.com\"}"
 ```
@@ -611,7 +611,7 @@ cloud services cannot fetch public keys.
    dig <worker-hostname> +short
    ```
 
-3. Check Worker health in the Cloudflare dashboard: Workers → `lifecycle-edge`
+3. Check Worker health in the Cloudflare dashboard: Workers → `tessera-edge`
    → Logs.
 
 4. If DNS is correct but Worker is not responding, redeploy:

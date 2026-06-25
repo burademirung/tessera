@@ -5,7 +5,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/lifecycle/control-plane/internal/audit"
+	"github.com/tessera/control-plane/internal/audit"
 )
 
 // capturingDoer is reused from idp_test.go (same package). The orchestrator
@@ -38,7 +38,7 @@ func (nopSink) Append(_ context.Context, _ audit.Record) error { return nil }
 
 func TestFederateAll(t *testing.T) {
 	d := &capturingDoer{resp: `{"token":"h.p.s"}`}
-	m := NewTokenMinter("https://idp.lifecycle.example/federate", "repo:org/r:environment:production",
+	m := NewTokenMinter("https://idp.tessera.example/federate", "repo:org/r:environment:production",
 		Audiences{AWS: "aws-aud", GCP: "gcp-aud", Azure: "az-aud"}, d)
 	aws, gcp, az := &stubAWS{}, &stubGCP{}, &stubAzure{}
 	o := NewOrchestrator(m, aws, gcp, az, audit.NewChain(nopSink{}))

@@ -47,23 +47,23 @@ mod tests {
 
     fn cfg() -> IssuerConfig {
         IssuerConfig {
-            issuer: "https://idp.lifecycle.example".into(),
+            issuer: "https://idp.tessera.example".into(),
         }
     }
 
     #[test]
     fn issuer_is_byte_identical_and_endpoints_derive_from_it() {
         let doc = openid_configuration(&cfg());
-        assert_eq!(doc["issuer"], "https://idp.lifecycle.example");
-        assert_eq!(doc["jwks_uri"], "https://idp.lifecycle.example/jwks");
+        assert_eq!(doc["issuer"], "https://idp.tessera.example");
+        assert_eq!(doc["jwks_uri"], "https://idp.tessera.example/jwks");
         assert_eq!(
             doc["authorization_endpoint"],
-            "https://idp.lifecycle.example/authorize"
+            "https://idp.tessera.example/authorize"
         );
-        assert_eq!(doc["token_endpoint"], "https://idp.lifecycle.example/token");
+        assert_eq!(doc["token_endpoint"], "https://idp.tessera.example/token");
         assert_eq!(
             doc["introspection_endpoint"],
-            "https://idp.lifecycle.example/introspect"
+            "https://idp.tessera.example/introspect"
         );
     }
 
@@ -90,7 +90,7 @@ mod tests {
     #[test]
     fn validate_discovery_enforces_issuer_match() {
         let doc = openid_configuration(&cfg());
-        assert!(validate_discovery(&doc, "https://idp.lifecycle.example").is_ok());
+        assert!(validate_discovery(&doc, "https://idp.tessera.example").is_ok());
         assert!(validate_discovery(&doc, "https://evil.example").is_err());
     }
 }

@@ -46,7 +46,7 @@ bestPractices:
     sourceUrl: https://www.rfc-editor.org/rfc/rfc7662
 ---
 
-A JWT is only as safe as its verifier. Lifecycle follows the JWT BCP
+A JWT is only as safe as its verifier. Tessera follows the JWT BCP
 (RFC 8725) literally: an **explicit algorithm allow-list**, `alg:none` rejected,
 and **one key bound to one algorithm** so an attacker cannot downgrade an RS256
 public key into an HS256 shared secret. Every token must carry an explicit `typ`

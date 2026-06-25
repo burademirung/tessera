@@ -7,7 +7,7 @@ import (
 	"context"
 	"fmt"
 
-	"github.com/lifecycle/control-plane/internal/domain"
+	"github.com/tessera/control-plane/internal/domain"
 )
 
 // PolicyEngine is the seam to the SoD-evaluating policy engine.

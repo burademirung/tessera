@@ -17,7 +17,7 @@ codeSample: |
   terraform {
     required_version = ">= 1.11"
     backend "s3" {
-      bucket                      = "lifecycle-tfstate"
+      bucket                      = "tessera-tfstate"
       key                         = "federation/terraform.tfstate"
       region                      = "auto"
       use_lockfile                = true

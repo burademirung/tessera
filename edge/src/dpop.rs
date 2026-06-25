@@ -183,7 +183,7 @@ mod tests {
     fn params() -> DpopParams {
         DpopParams {
             htm: "POST".into(),
-            htu: "https://idp.lifecycle.example/token".into(),
+            htu: "https://idp.tessera.example/token".into(),
             max_iat_skew: 60,
             expected_ath: None,
         }
@@ -193,7 +193,7 @@ mod tests {
     fn accepts_a_valid_proof_and_returns_jkt() {
         let (proof, jkt) = make_proof(
             "POST",
-            "https://idp.lifecycle.example/token",
+            "https://idp.tessera.example/token",
             NOW,
             "jti-1",
             None,
@@ -210,7 +210,7 @@ mod tests {
         let header =
             json!({ "typ": "jwt", "alg": "EdDSA", "jwk": { "kty":"OKP","crv":"Ed25519","x": x } });
         let claims =
-            json!({ "htm":"POST","htu":"https://idp.lifecycle.example/token","iat":NOW,"jti":"j" });
+            json!({ "htm":"POST","htu":"https://idp.tessera.example/token","iat":NOW,"jti":"j" });
         let h = b64url_encode(serde_json::to_vec(&header).unwrap().as_slice());
         let p = b64url_encode(serde_json::to_vec(&claims).unwrap().as_slice());
         use ed25519_dalek::Signer;
@@ -222,7 +222,7 @@ mod tests {
 
     #[test]
     fn rejects_htm_or_htu_mismatch() {
-        let (proof, _) = make_proof("GET", "https://idp.lifecycle.example/token", NOW, "j", None);
+        let (proof, _) = make_proof("GET", "https://idp.tessera.example/token", NOW, "j", None);
         let mut never = |_: &str| false;
         assert!(verify_dpop(&proof, &params(), NOW, &mut never).is_err());
         let (proof2, _) = make_proof("POST", "https://evil.example/token", NOW, "j", None);
@@ -233,7 +233,7 @@ mod tests {
     fn rejects_stale_iat() {
         let (proof, _) = make_proof(
             "POST",
-            "https://idp.lifecycle.example/token",
+            "https://idp.tessera.example/token",
             NOW - 1000,
             "j",
             None,
@@ -246,7 +246,7 @@ mod tests {
     fn rejects_replayed_jti() {
         let (proof, _) = make_proof(
             "POST",
-            "https://idp.lifecycle.example/token",
+            "https://idp.tessera.example/token",
             NOW,
             "dup",
             None,
@@ -261,7 +261,7 @@ mod tests {
         p.expected_ath = Some("expected-hash".into());
         let (proof_no_ath, _) = make_proof(
             "POST",
-            "https://idp.lifecycle.example/token",
+            "https://idp.tessera.example/token",
             NOW,
             "j",
             None,
@@ -270,7 +270,7 @@ mod tests {
         assert!(verify_dpop(&proof_no_ath, &p, NOW, &mut never).is_err());
         let (proof_ath, _) = make_proof(
             "POST",
-            "https://idp.lifecycle.example/token",
+            "https://idp.tessera.example/token",
             NOW,
             "j2",
             Some("expected-hash"),

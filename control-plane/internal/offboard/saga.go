@@ -9,8 +9,8 @@ import (
 	"context"
 	"time"
 
-	"github.com/lifecycle/control-plane/internal/audit"
-	"github.com/lifecycle/control-plane/internal/ports"
+	"github.com/tessera/control-plane/internal/audit"
+	"github.com/tessera/control-plane/internal/ports"
 )
 
 // SubState is one offboarding step per app.
@@ -98,7 +98,7 @@ func emit(ctx context.Context, ch *audit.Chain, now time.Time, userID, action, a
 	details["app"] = app
 	_, _ = ch.Emit(ctx, audit.Event{
 		EventTime: now,
-		Actor:     "lifecycle-control-plane",
+		Actor:     "tessera-control-plane",
 		Action:    action,
 		Subject:   userID,
 		Outcome:   outcome,

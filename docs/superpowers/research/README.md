@@ -1,4 +1,4 @@
-# Research briefs — Lifecycle identity engine
+# Research briefs — Tessera identity engine
 
 Citation-backed best-practice/standards research (2024–2026) from a 12-agent parallel deep-research pass,
 driving the design in `../specs/2026-06-24-lifecycle-identity-engine-design.md`. Each brief lists the

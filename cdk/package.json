@@ -1,5 +1,5 @@
 {
-  "name": "lifecycle-cdk",
+  "name": "tessera-cdk",
   "version": "0.1.0",
   "private": true,
   "bin": { "app": "bin/app.ts" },

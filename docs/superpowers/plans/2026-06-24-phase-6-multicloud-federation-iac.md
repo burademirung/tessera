@@ -46,12 +46,12 @@ mock_provider "google" {}
 mock_provider "cloudflare" {}
 
 variables {
-  edge_issuer_url       = "https://idp.lifecycle.example"
-  edge_issuer_host_path = "idp.lifecycle.example"
-  allowed_sub           = "lifecycle:federation:demo"
+  edge_issuer_url       = "https://idp.tessera.example"
+  edge_issuer_host_path = "idp.tessera.example"
+  allowed_sub           = "tessera:federation:demo"
   aws_audience          = "sts.amazonaws.com"
   azure_audience        = "api://AzureADTokenExchange"
-  gcp_audience          = "//iam.googleapis.com/projects/123456789012/locations/global/workloadIdentityPools/lifecycle-pool/providers/lifecycle-oidc"
+  gcp_audience          = "//iam.googleapis.com/projects/123456789012/locations/global/workloadIdentityPools/tessera-pool/providers/tessera-oidc"
   aws_region            = "us-east-1"
   azure_tenant_id       = "00000000-0000-0000-0000-000000000000"
   gcp_project_id        = "ident-fed-demo"
@@ -63,7 +63,7 @@ run "root_plans_clean" {
   command = plan
   # The scaffold has no resources yet; a clean plan proves providers + backend wiring parse.
   assert {
-    condition     = var.allowed_sub == "lifecycle:federation:demo"
+    condition     = var.allowed_sub == "tessera:federation:demo"
     error_message = "root variables must thread through to the plan"
   }
 }
@@ -170,11 +170,11 @@ Create `terraform/variables.tf` (alphabetized):
 # ----------------------------------------------------------------------------
 # These canonical values MUST match the edge issuer's federation audiences and
 # the trust config asserted in every module/test. Single source of truth:
-#   issuer                : https://idp.lifecycle.example
+#   issuer                : https://idp.tessera.example
 #   aud (AWS)             : sts.amazonaws.com
 #   aud (Azure FIC)       : api://AzureADTokenExchange
-#   aud (GCP provider)    : //iam.googleapis.com/projects/123456789012/locations/global/workloadIdentityPools/lifecycle-pool/providers/lifecycle-oidc
-#   sub convention        : lifecycle:federation:<env>   (exact, no wildcard; <=127 chars)
+#   aud (GCP provider)    : //iam.googleapis.com/projects/123456789012/locations/global/workloadIdentityPools/tessera-pool/providers/tessera-oidc
+#   sub convention        : tessera:federation:<env>   (exact, no wildcard; <=127 chars)
 # ----------------------------------------------------------------------------
 
 variable "allowed_sub" {
@@ -292,10 +292,10 @@ Create `terraform/modules/aws-oidc-trust/tests/trust.tftest.hcl`:
 mock_provider "aws" {}
 
 variables {
-  issuer_url       = "https://idp.lifecycle.example"
-  issuer_host_path = "idp.lifecycle.example"
+  issuer_url       = "https://idp.tessera.example"
+  issuer_host_path = "idp.tessera.example"
   client_id        = "sts.amazonaws.com"
-  allowed_sub      = "lifecycle:federation:aws"
+  allowed_sub      = "tessera:federation:aws"
 }
 
 run "trust_policy_pins_aud_and_exact_sub" {
@@ -309,11 +309,11 @@ run "trust_policy_pins_aud_and_exact_sub" {
 
   # Trust policy must StringEquals both <host-path>:aud and <host-path>:sub (exact, no wildcard).
   assert {
-    condition = jsondecode(aws_iam_role.federation.assume_role_policy).Statement[0].Condition.StringEquals["idp.lifecycle.example:aud"] == "sts.amazonaws.com"
+    condition = jsondecode(aws_iam_role.federation.assume_role_policy).Statement[0].Condition.StringEquals["idp.tessera.example:aud"] == "sts.amazonaws.com"
     error_message = "trust policy must pin aud with StringEquals"
   }
   assert {
-    condition = jsondecode(aws_iam_role.federation.assume_role_policy).Statement[0].Condition.StringEquals["idp.lifecycle.example:sub"] == "lifecycle:federation:aws"
+    condition = jsondecode(aws_iam_role.federation.assume_role_policy).Statement[0].Condition.StringEquals["idp.tessera.example:sub"] == "tessera:federation:aws"
     error_message = "trust policy must pin the EXACT sub with StringEquals (never StringLike / wildcard)"
   }
 
@@ -409,7 +409,7 @@ data "aws_iam_policy_document" "trust" {
 }
 
 resource "aws_iam_role" "federation" {
-  name                 = "lifecycle-edge-federation"
+  name                 = "tessera-edge-federation"
   assume_role_policy   = data.aws_iam_policy_document.trust.json
   max_session_duration = 3600 # 1h short-lived sessions
 }
@@ -471,11 +471,11 @@ mock_provider "google" {}
 variables {
   project_id       = "ident-fed-demo"
   project_number   = "123456789012"
-  issuer_url       = "https://idp.lifecycle.example"
-  allowed_audience = "//iam.googleapis.com/projects/123456789012/locations/global/workloadIdentityPools/lifecycle-pool/providers/lifecycle-oidc"
-  allowed_sub      = "lifecycle:federation:gcp"
-  pool_id          = "lifecycle-pool"
-  provider_id      = "lifecycle-oidc"
+  issuer_url       = "https://idp.tessera.example"
+  allowed_audience = "//iam.googleapis.com/projects/123456789012/locations/global/workloadIdentityPools/tessera-pool/providers/tessera-oidc"
+  allowed_sub      = "tessera:federation:gcp"
+  pool_id          = "tessera-pool"
+  provider_id      = "tessera-oidc"
   granted_role     = "roles/storage.objectViewer"
 }
 
@@ -484,7 +484,7 @@ run "wif_provider_pins_aud_and_exact_sub_via_cel" {
 
   # Issuer pinned on the OIDC config.
   assert {
-    condition     = google_iam_workload_identity_pool_provider.edge.oidc[0].issuer_uri == "https://idp.lifecycle.example"
+    condition     = google_iam_workload_identity_pool_provider.edge.oidc[0].issuer_uri == "https://idp.tessera.example"
     error_message = "WIF provider must pin the exact issuer_uri"
   }
   # Exactly one allowed audience (the provider resource URL).
@@ -494,7 +494,7 @@ run "wif_provider_pins_aud_and_exact_sub_via_cel" {
   }
   # CEL attribute-condition pins both aud and the EXACT sub.
   assert {
-    condition     = strcontains(google_iam_workload_identity_pool_provider.edge.attribute_condition, "assertion.sub == \"lifecycle:federation:gcp\"")
+    condition     = strcontains(google_iam_workload_identity_pool_provider.edge.attribute_condition, "assertion.sub == \"tessera:federation:gcp\"")
     error_message = "attribute_condition must pin the exact sub via CEL"
   }
   assert {
@@ -508,7 +508,7 @@ run "direct_principalset_binding_no_service_account" {
 
   # Direct resource access: a principalSet:// member, no service account impersonation.
   assert {
-    condition     = strcontains(google_project_iam_member.federation.member, "principalSet://iam.googleapis.com/projects/123456789012/locations/global/workloadIdentityPools/lifecycle-pool/subject/lifecycle:federation:gcp")
+    condition     = strcontains(google_project_iam_member.federation.member, "principalSet://iam.googleapis.com/projects/123456789012/locations/global/workloadIdentityPools/tessera-pool/subject/tessera:federation:gcp")
     error_message = "binding must use a direct principalSet:// member (no service account)"
   }
   assert {
@@ -678,11 +678,11 @@ mock_provider "azurerm" {}
 mock_provider "time" {}
 
 variables {
-  issuer_url           = "https://idp.lifecycle.example"
-  allowed_sub          = "lifecycle:federation:azure"
+  issuer_url           = "https://idp.tessera.example"
+  allowed_sub          = "tessera:federation:azure"
   audience             = "api://AzureADTokenExchange"
-  app_display_name     = "lifecycle-edge-federation"
-  fic_name             = "lifecycle-edge-fic"
+  app_display_name     = "tessera-edge-federation"
+  fic_name             = "tessera-edge-fic"
   role_definition_name = "Reader"
   role_scope           = "/subscriptions/00000000-0000-0000-0000-000000000000"
   fic_propagation_delay = "60s"
@@ -693,15 +693,15 @@ run "fic_pins_exact_issuer_subject_audience" {
 
   # App registration (not a UAMI).
   assert {
-    condition     = azuread_application.edge.display_name == "lifecycle-edge-federation"
+    condition     = azuread_application.edge.display_name == "tessera-edge-federation"
     error_message = "must provision an app registration (azuread_application), not a UAMI"
   }
   assert {
-    condition     = azuread_application_federated_identity_credential.edge.issuer == "https://idp.lifecycle.example"
+    condition     = azuread_application_federated_identity_credential.edge.issuer == "https://idp.tessera.example"
     error_message = "FIC issuer must be exact"
   }
   assert {
-    condition     = azuread_application_federated_identity_credential.edge.subject == "lifecycle:federation:azure"
+    condition     = azuread_application_federated_identity_credential.edge.subject == "tessera:federation:azure"
     error_message = "FIC subject must be the EXACT sub (no wildcard)"
   }
   assert {
@@ -820,7 +820,7 @@ resource "azuread_service_principal" "edge" {
 resource "azuread_application_federated_identity_credential" "edge" {
   application_id = azuread_application.edge.id
   display_name   = var.fic_name
-  description    = "Lifecycle edge OIDC federation"
+  description    = "Tessera edge OIDC federation"
   issuer         = var.issuer_url
   subject        = var.allowed_sub
   audiences      = [var.audience]
@@ -910,19 +910,19 @@ mock_provider "cloudflare" {}
 mock_provider "time" {}
 
 variables {
-  edge_issuer_url            = "https://idp.lifecycle.example"
-  edge_issuer_host_path      = "idp.lifecycle.example"
-  allowed_sub                = "lifecycle:federation:demo"
+  edge_issuer_url            = "https://idp.tessera.example"
+  edge_issuer_host_path      = "idp.tessera.example"
+  allowed_sub                = "tessera:federation:demo"
   aws_audience               = "sts.amazonaws.com"
   azure_audience             = "api://AzureADTokenExchange"
-  gcp_audience               = "//iam.googleapis.com/projects/123456789012/locations/global/workloadIdentityPools/lifecycle-pool/providers/lifecycle-oidc"
+  gcp_audience               = "//iam.googleapis.com/projects/123456789012/locations/global/workloadIdentityPools/tessera-pool/providers/tessera-oidc"
   aws_region                 = "us-east-1"
   azure_tenant_id            = "00000000-0000-0000-0000-000000000000"
   gcp_project_id             = "ident-fed-demo"
   gcp_project_number         = "123456789012"
   cloudflare_account_id      = "0123456789abcdef0123456789abcdef"
-  gcp_pool_id                = "lifecycle-pool"
-  gcp_provider_id            = "lifecycle-oidc"
+  gcp_pool_id                = "tessera-pool"
+  gcp_provider_id            = "tessera-oidc"
   gcp_granted_role           = "roles/storage.objectViewer"
   azure_role_definition_name = "Reader"
   azure_role_scope           = "/subscriptions/00000000-0000-0000-0000-000000000000"
@@ -932,11 +932,11 @@ run "root_wires_all_three_modules_with_exact_sub" {
   command = plan
 
   assert {
-    condition = jsondecode(module.aws_oidc_trust.assume_role_policy_json).Statement[0].Condition.StringEquals["idp.lifecycle.example:sub"] == "lifecycle:federation:demo"
+    condition = jsondecode(module.aws_oidc_trust.assume_role_policy_json).Statement[0].Condition.StringEquals["idp.tessera.example:sub"] == "tessera:federation:demo"
     error_message = "AWS module must receive the exact root sub"
   }
   assert {
-    condition     = strcontains(module.gcp_wif.principal_set, "subject/lifecycle:federation:demo")
+    condition     = strcontains(module.gcp_wif.principal_set, "subject/tessera:federation:demo")
     error_message = "GCP module must receive the exact root sub in its principalSet"
   }
   assert {
@@ -982,13 +982,13 @@ Append to `terraform/variables.tf`:
 variable "gcp_pool_id" {
   type        = string
   description = "GCP Workload Identity Pool id."
-  default     = "lifecycle-pool"
+  default     = "tessera-pool"
 }
 
 variable "gcp_provider_id" {
   type        = string
   description = "GCP WIF OIDC provider id."
-  default     = "lifecycle-oidc"
+  default     = "tessera-oidc"
 }
 
 variable "gcp_granted_role" {
@@ -1055,8 +1055,8 @@ module "azure_fic" {
   issuer_url           = var.edge_issuer_url
   allowed_sub          = var.allowed_sub
   audience             = var.azure_audience
-  app_display_name     = "lifecycle-edge-federation"
-  fic_name             = "lifecycle-edge-fic"
+  app_display_name     = "tessera-edge-federation"
+  fic_name             = "tessera-edge-fic"
   role_definition_name = var.azure_role_definition_name
   role_scope           = var.azure_role_scope
 }
@@ -1131,11 +1131,11 @@ test_clean_plan_allows if {
 	count(deny) == 0 with input as {"resource_changes": [
 		{
 			"type": "aws_iam_role",
-			"change": {"after": {"assume_role_policy": "{\"Statement\":[{\"Condition\":{\"StringEquals\":{\"idp.lifecycle.example:sub\":\"lifecycle:federation:demo\",\"idp.lifecycle.example:aud\":\"sts.amazonaws.com\"}}}]}"}},
+			"change": {"after": {"assume_role_policy": "{\"Statement\":[{\"Condition\":{\"StringEquals\":{\"idp.tessera.example:sub\":\"tessera:federation:demo\",\"idp.tessera.example:aud\":\"sts.amazonaws.com\"}}}]}"}},
 		},
 		{
 			"type": "google_project_iam_member",
-			"change": {"after": {"member": "principalSet://iam.googleapis.com/projects/123/locations/global/workloadIdentityPools/p/subject/lifecycle:federation:demo"}},
+			"change": {"after": {"member": "principalSet://iam.googleapis.com/projects/123/locations/global/workloadIdentityPools/p/subject/tessera:federation:demo"}},
 		},
 	]}
 }
@@ -1144,7 +1144,7 @@ test_clean_plan_allows if {
 test_wildcard_aws_sub_denied if {
 	some msg in deny with input as {"resource_changes": [{
 		"type": "aws_iam_role",
-		"change": {"after": {"assume_role_policy": "{\"Statement\":[{\"Condition\":{\"StringLike\":{\"idp.lifecycle.example:sub\":\"*\"}}}]}"}},
+		"change": {"after": {"assume_role_policy": "{\"Statement\":[{\"Condition\":{\"StringLike\":{\"idp.tessera.example:sub\":\"*\"}}}]}"}},
 	}]}
 	contains(msg, "wildcard")
 }
@@ -1455,7 +1455,7 @@ data "aws_iam_policy_document" "ci_trust" {
 }
 
 resource "aws_iam_role" "ci_deploy" {
-  name                 = "lifecycle-ci-deploy"
+  name                 = "tessera-ci-deploy"
   assume_role_policy   = data.aws_iam_policy_document.ci_trust.json
   max_session_duration = 3600
 }
@@ -1463,14 +1463,14 @@ resource "aws_iam_role" "ci_deploy" {
 # ---- GCP: GitHub WIF pool/provider + direct binding ----
 resource "google_iam_workload_identity_pool" "github" {
   project                   = var.gcp_project_id
-  workload_identity_pool_id = "lifecycle-ci-pool"
+  workload_identity_pool_id = "tessera-ci-pool"
   display_name              = "lifecycle ci"
 }
 
 resource "google_iam_workload_identity_pool_provider" "github" {
   project                            = var.gcp_project_id
   workload_identity_pool_id          = google_iam_workload_identity_pool.github.workload_identity_pool_id
-  workload_identity_pool_provider_id = "lifecycle-ci-oidc"
+  workload_identity_pool_provider_id = "tessera-ci-oidc"
 
   attribute_mapping = {
     "google.subject"       = "assertion.sub"
@@ -1494,7 +1494,7 @@ resource "google_project_iam_member" "ci_deploy" {
 
 # ---- Azure: app registration + GitHub FIC ----
 resource "azuread_application" "ci" {
-  display_name = "lifecycle-ci-deploy"
+  display_name = "tessera-ci-deploy"
 }
 
 resource "azuread_service_principal" "ci" {
@@ -1503,7 +1503,7 @@ resource "azuread_service_principal" "ci" {
 
 resource "azuread_application_federated_identity_credential" "ci" {
   application_id = azuread_application.ci.id
-  display_name   = "lifecycle-ci-github"
+  display_name   = "tessera-ci-github"
   description    = "GitHub Actions CI deploy"
   issuer         = local.github_issuer
   subject        = local.ci_sub
@@ -1581,7 +1581,7 @@ git commit -m "feat(iac): bootstrap CI deploy identities (separate state, sub pi
 Create `cdk/package.json`:
 ```json
 {
-  "name": "lifecycle-cdk",
+  "name": "tessera-cdk",
   "version": "0.1.0",
   "private": true,
   "bin": { "app": "bin/app.ts" },
@@ -2081,12 +2081,12 @@ credentials go in `AWS_ACCESS_KEY_ID` / `AWS_SECRET_ACCESS_KEY`; bucket + endpoi
 are passed at init:
 
     terraform -chdir=terraform init \
-      -backend-config="bucket=lifecycle-tfstate" \
+      -backend-config="bucket=tessera-tfstate" \
       -backend-config="key=federation/terraform.tfstate" \
       -backend-config="endpoints={s3=\"https://<ACCOUNT_ID>.r2.cloudflarestorage.com\"}"
 
     terraform -chdir=bootstrap init \
-      -backend-config="bucket=lifecycle-tfstate" \
+      -backend-config="bucket=tessera-tfstate" \
       -backend-config="key=bootstrap/terraform.tfstate" \
       -backend-config="endpoints={s3=\"https://<ACCOUNT_ID>.r2.cloudflarestorage.com\"}"
 
@@ -2237,7 +2237,7 @@ jobs:
         working-directory: terraform
         run: |
           terraform init \
-            -backend-config="bucket=lifecycle-tfstate" \
+            -backend-config="bucket=tessera-tfstate" \
             -backend-config="key=federation/terraform.tfstate" \
             -backend-config="endpoints={s3=\"https://${{ secrets.R2_ACCOUNT_ID }}.r2.cloudflarestorage.com\"}"
           terraform destroy -auto-approve

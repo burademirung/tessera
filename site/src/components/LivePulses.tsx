@@ -10,8 +10,9 @@ import { useTelemetryStore } from '../lib/telemetry-store';
 const PULSE_DECAY = 3; // lambda — keeps a single pulse to one fade (≤3 flashes/sec).
 // Only ACTIVE/flowing edges + the primary CTA may use the lapis accent (#2740C8).
 const ACCENT = new THREE.Color('#2740C8');
-// Idle edges stay neutral grout.
-const REST = new THREE.Color('#E4E1D8');
+// Idle edges stay neutral grout (a touch deeper than the hairline so the wiring
+// reads against the limestone even before any pulse arrives).
+const REST = new THREE.Color('#C9C4B8');
 
 // drei <Line> renders a Line2 whose `.material` is a LineMaterial (color is a
 // THREE.Color, opacity/transparent are mutable per frame). We reference it
@@ -69,7 +70,7 @@ export default function LivePulses({ lite = false }: { lite?: boolean }) {
       if (mat) {
         // Idle = REST (neutral); active = lerp toward ACCENT by the damped pulse.
         mat.color.copy(REST).lerp(ACCENT, current[i]);
-        mat.opacity = 0.3 + 0.7 * current[i];
+        mat.opacity = 0.5 + 0.5 * current[i];
         mat.transparent = true;
       }
     });

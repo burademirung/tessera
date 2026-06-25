@@ -97,8 +97,8 @@ mod tests {
         let token = s
             .sign_internal(
                 "user-9",
-                "https://idp.lifecycle.example",
-                "lifecycle-internal",
+                "https://idp.tessera.example",
+                "tessera-internal",
                 NOW,
                 600,
                 "at+jwt",
@@ -108,8 +108,8 @@ mod tests {
         let dk = DecodingKey::from_ed_pem(pub_pem.as_bytes()).unwrap();
         let params = VerifyParams {
             alg: VerifyAlg::EdDSA,
-            issuer: "https://idp.lifecycle.example".into(),
-            audience: "lifecycle-internal".into(),
+            issuer: "https://idp.tessera.example".into(),
+            audience: "tessera-internal".into(),
             expected_typ: Some("at+jwt".into()),
             leeway_secs: 60,
         };
@@ -139,8 +139,8 @@ mod tests {
         let token = s
             .sign_internal(
                 "u",
-                "https://idp.lifecycle.example",
-                "lifecycle-internal",
+                "https://idp.tessera.example",
+                "tessera-internal",
                 NOW,
                 600,
                 "at+jwt",
