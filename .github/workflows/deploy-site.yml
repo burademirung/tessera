@@ -1,0 +1,29 @@
+name: deploy-site
+on:
+  push:
+    branches: [main]
+    paths: ['site/**', '.github/workflows/deploy-site.yml']
+permissions:
+  contents: read
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    environment: production
+    steps:
+      # NOTE: replace each @<tag> with a pinned commit SHA before first run (see docs/superpowers/research/08).
+      - uses: actions/checkout@v4
+      - uses: pnpm/action-setup@v4
+        with: { version: 9 }
+      - uses: actions/setup-node@v4
+        with: { node-version: 20, cache: pnpm, cache-dependency-path: site/pnpm-lock.yaml }
+      - run: pnpm --dir site install --frozen-lockfile
+      - run: pnpm --dir site build
+      - run: pnpm --dir site test
+      - uses: cloudflare/wrangler-action@v3
+        with:
+          apiToken: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          accountId: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+          wranglerVersion: '4.103.0' # pin; bump to the current v4 at first run
+          # project name + output dir come from site/wrangler.jsonc; no positionals.
+          command: pages deploy
+          workingDirectory: site
