@@ -1,5 +1,11 @@
 {
+  // Phase-7: SSR Worker (output: 'server' via @astrojs/cloudflare). Content pages
+  // stay `prerender = true` (served as static assets); only the /api/* telemetry
+  // routes run dynamically on the Worker. The @astrojs/cloudflare adapter emits
+  // the runtime entry + ASSETS binding during `astro build`; this file carries
+  // only Worker-level settings (no `pages_build_output_dir` — that would make the
+  // adapter treat the project as a Pages deployment, where `ASSETS` is reserved).
   "name": "lifecycle-site",
   "compatibility_date": "2026-06-01",
-  "pages_build_output_dir": "./dist"
+  "compatibility_flags": ["nodejs_compat"]
 }
