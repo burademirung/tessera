@@ -9,7 +9,7 @@ name = "lifecycle_edge"
 crate-type = ["cdylib", "rlib"]
 
 [dependencies]
-worker = { version = "0.8", features = ["http", "d1"] }
+worker = { version = "0.8", features = ["http", "d1", "queue"] }
 worker-macros = "0.8"
 web-sys = { version = "0.3", features = ["WorkerGlobalScope", "Crypto", "SubtleCrypto", "CryptoKey", "CryptoKeyPair"] }
 wasm-bindgen = "0.2"

@@ -1,0 +1,7 @@
+//! Telemetry path: event shape + Queue emission seam for the live 3D graph.
+pub mod aggregator;
+pub mod emit;
+pub mod event;
+pub mod sse;
+
+pub use event::{TelemetryEvent, TelemetryPhase, EDGE_IDS, NODE_IDS};

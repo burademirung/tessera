@@ -1,7 +1,8 @@
 import { useMemo } from 'react';
 import { Canvas } from '@react-three/fiber';
-import { Instances, Instance, Line } from '@react-three/drei';
+import { Instances, Instance, Line, Billboard, Text } from '@react-three/drei';
 import { GRAPH_NODES, GRAPH_EDGES, getNode } from '../lib/graph-model';
+import LivePulses from './LivePulses';
 
 // Normalized [0,1] layout → centered 3D coords. Pure + exported for tests.
 export function nodePositions(): [number, number, number][] {
@@ -27,6 +28,33 @@ function Nodes() {
   );
 }
 
+// WCAG 1.4.1 (use of color): each node carries a visible TEXT label so node
+// types are distinguishable WITHOUT relying on color. Labels billboard to face
+// the camera and sit just below each sphere. The 7 labels come from GRAPH_NODES.
+export function NodeLabels({ lite = false }: { lite?: boolean }) {
+  const positions = useMemo(() => nodePositions(), []);
+  return (
+    <>
+      {GRAPH_NODES.map((n, i) => (
+        <Billboard key={n.id} position={[positions[i][0], positions[i][1] - 0.85, positions[i][2]]}>
+          <Text
+            fontSize={lite ? 0.42 : 0.46}
+            color="#1A1A22"
+            anchorX="center"
+            anchorY="middle"
+            outlineWidth={0.04}
+            outlineColor="#FFFFFF"
+            maxWidth={4}
+            textAlign="center"
+          >
+            {n.label}
+          </Text>
+        </Billboard>
+      ))}
+    </>
+  );
+}
+
 function Edges() {
   // drei <Line> requires at least 2 points; build straight node→node segments.
   return (
@@ -43,7 +71,7 @@ function Edges() {
   );
 }
 
-export default function FlowGraph3D({ lite = false }: { lite?: boolean }) {
+export default function FlowGraph3D({ lite = false, live = false }: { lite?: boolean; live?: boolean }) {
   // Wrap in a div that carries the accessible name (WCAG 1.1.1). A raw <canvas>
   // is invisible to AT; the SVG/poster remain the real fallbacks.
   return (
@@ -57,7 +85,8 @@ export default function FlowGraph3D({ lite = false }: { lite?: boolean }) {
         <ambientLight intensity={0.8} />
         <directionalLight position={[5, 5, 5]} intensity={0.6} />
         <Nodes />
-        <Edges />
+        <NodeLabels lite={lite} />
+        {live ? <LivePulses lite={lite} /> : <Edges />}
       </Canvas>
     </div>
   );

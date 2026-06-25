@@ -15,6 +15,7 @@
     "e2e": "playwright test"
   },
   "dependencies": {
+    "@astrojs/cloudflare": "^14.0.0",
     "@astrojs/mdx": "^7.0.0",
     "@astrojs/react": "^6.0.0",
     "@pmndrs/detect-gpu": "^6.0.10",

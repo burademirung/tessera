@@ -11,6 +11,7 @@ pub mod rp;
 pub mod scim;
 pub mod session;
 pub mod ssrf;
+pub mod telemetry;
 pub mod util;
 
 #[cfg(target_arch = "wasm32")]
@@ -93,8 +94,30 @@ mod worker_entry {
             // I5: authz PEP decision endpoint over data.authz.allow (fail closed).
             (Method::Post, "/decision") => handle_decision(&mut req, &env).await,
             (Method::Post, "/federate") => handle_federate(&mut req, &env).await,
+            // PHASE-7 SEAM: emit a real login cascade to the telemetry Queue
+            // (fail-open, observability only — never blocks the auth path). The
+            // site's "Run the demo" button POSTs here via the demo trigger route.
+            (Method::Post, "/demo/run") => handle_demo_run(&env).await,
             _ => Response::error("not found", 404),
         }
+    }
+
+    // ---- PHASE-7: telemetry demo cascade -------------------------------------
+
+    /// Emit the canonical login cascade to the telemetry Queue. Each phase
+    /// transition is a `build_event` → `emit_phase` (fail-open). This is the
+    /// minimal Phase-2 engine seam: a real, ordered sequence of TelemetryEvents
+    /// drives the live 3D graph end-to-end.
+    async fn handle_demo_run(env: &Env) -> Result<Response> {
+        let now_ms = Date::now().as_millis() as u64;
+        // seq0 from epoch-ms keeps ids monotonic across separate demo runs.
+        let seq0 = now_ms;
+        for ev in crate::telemetry::emit::demo_sequence(seq0, now_ms) {
+            // Fail-open: a Queue error must never surface as an auth-path 500.
+            let _ = crate::telemetry::emit::emit_phase(env, &ev).await;
+        }
+        Response::from_json(&serde_json::json!({ "ok": true, "emitted": 8 }))
+            .map(|r| r.with_status(202))
     }
 
     // ---- C1: authenticated /federate -----------------------------------------
