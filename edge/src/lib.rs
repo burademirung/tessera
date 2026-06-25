@@ -7,7 +7,11 @@ pub mod jwks;
 pub mod jwt;
 pub mod rp;
 pub mod session;
+pub mod ssrf;
 pub mod util;
+
+#[cfg(target_arch = "wasm32")]
+pub mod fetcher;
 
 #[cfg(target_arch = "wasm32")]
 pub mod session_do;
