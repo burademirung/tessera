@@ -1,0 +1,71 @@
+name: control-plane-cron
+on:
+  schedule:
+    - cron: '0 6 * * *'        # daily offboarding sweep (routine leavers)
+    - cron: '0 7 * * 1'        # weekly access-review batch (Mondays)
+  workflow_dispatch:           # for-cause immediate offboarding
+    inputs:
+      mode:
+        description: access-review | offboard
+        required: true
+        default: offboard
+      user:
+        description: subject identity id (offboard)
+        required: false
+      apps:
+        description: comma-separated app ids (offboard)
+        required: false
+      for_cause:
+        description: immediate for-cause offboarding
+        type: boolean
+        default: false
+permissions:
+  contents: read
+  id-token: write              # keyless OIDC to AWS/GCP/Azure
+jobs:
+  run:
+    runs-on: ubuntu-latest
+    environment: production     # OIDC sub pins to this environment
+    defaults:
+      run:
+        working-directory: control-plane
+    steps:
+      # NOTE: Phase 9 hardens this — replace each @<tag> with a pinned commit SHA,
+      # add step-security/harden-runner as the first step, and add per-cloud OIDC
+      # login actions (aws-actions/configure-aws-credentials,
+      # google-github-actions/auth, azure/login), all SHA-pinned.
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v5
+        with:
+          go-version: '1.23'
+          cache-dependency-path: control-plane/go.sum
+      - name: vet + test
+        run: |
+          go vet ./...
+          go test ./...
+      - name: build
+        run: go build ./cmd/...
+      - name: scheduled offboarding sweep
+        if: github.event_name == 'schedule' && github.event.schedule == '0 6 * * *'
+        run: ./offboard -mode offboard -user "${SWEEP_USER}" -apps "${SWEEP_APPS}"
+        env:
+          SWEEP_USER: ${{ vars.SWEEP_USER }}
+          SWEEP_APPS: ${{ vars.SWEEP_APPS }}
+      - name: scheduled access review
+        if: github.event_name == 'schedule' && github.event.schedule == '0 7 * * 1'
+        run: ./access-review -mode access-review
+      - name: manual run
+        if: github.event_name == 'workflow_dispatch'
+        run: |
+          if [ "${MODE}" = "offboard" ]; then
+            FLAGS=""
+            if [ "${FOR_CAUSE}" = "true" ]; then FLAGS="-for-cause"; fi
+            ./offboard -mode offboard -user "${USER_ID}" -apps "${APPS}" ${FLAGS}
+          else
+            ./access-review -mode access-review
+          fi
+        env:
+          MODE: ${{ github.event.inputs.mode }}
+          USER_ID: ${{ github.event.inputs.user }}
+          APPS: ${{ github.event.inputs.apps }}
+          FOR_CAUSE: ${{ github.event.inputs.for_cause }}
