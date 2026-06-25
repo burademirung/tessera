@@ -1,0 +1,35 @@
+name: policy-ci
+on:
+  push:
+    paths: ['policy/**', '.github/workflows/policy-ci.yml']
+  pull_request:
+    paths: ['policy/**', '.github/workflows/policy-ci.yml']
+permissions:
+  contents: read
+jobs:
+  rego:
+    runs-on: ubuntu-latest
+    steps:
+      # NOTE: SHA-pin each action before first run (Phase 9 hardens; see research/08).
+      - uses: actions/checkout@v4
+      - name: Install OPA
+        run: |
+          curl -L -o /usr/local/bin/opa https://openpolicyagent.org/downloads/v1.4.0/opa_linux_amd64_static
+          chmod +x /usr/local/bin/opa
+          opa version
+      - name: Install Regal
+        run: |
+          curl -L -o /usr/local/bin/regal https://github.com/StyraInc/regal/releases/download/v0.30.0/regal_Linux_x86_64
+          chmod +x /usr/local/bin/regal
+          regal version
+      # OPA >= 1.0 defaults to Rego v1; plain `opa fmt` formats as v1.
+      - name: fmt check
+        run: opa fmt --diff --fail policy/
+      - name: strict check
+        run: opa check --strict --v1-compatible policy/
+      - name: regal lint
+        run: regal lint policy/
+      - name: test + coverage gate
+        run: |
+          opa test policy/authz policy/conformance --coverage --format=json --fail-on-empty > coverage.json
+          python3 -c "import json; c=json.load(open('coverage.json')); cov=c.get('coverage',0); print(f'coverage: {cov:.1f}%'); exit(0 if cov>=90 else 1)"
