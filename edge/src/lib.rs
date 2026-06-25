@@ -1,3 +1,4 @@
+pub mod jwt;
 pub mod util;
 
 #[cfg(target_arch = "wasm32")]
