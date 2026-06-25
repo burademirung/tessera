@@ -1,0 +1,21 @@
+{
+	"plan_bad": {
+		"resource_changes": [
+			{
+				"address": "aws_iam_role.fed",
+				"type": "aws_iam_role",
+				"change": {
+					"actions": ["create"],
+					"after": {
+						"assume_role_policy": "{\"Statement\":[{\"Effect\":\"Allow\",\"Action\":\"sts:AssumeRoleWithWebIdentity\",\"Condition\":{\"StringLike\":{\"token.actions.example.com:sub\":\"repo:org/*\"}}}]}"
+					}
+				}
+			},
+			{
+				"address": "aws_s3_bucket_public_access_block.audit",
+				"type": "aws_s3_bucket_public_access_block",
+				"change": {"actions": ["create"], "after": {"block_public_acls": false}}
+			}
+		]
+	}
+}
