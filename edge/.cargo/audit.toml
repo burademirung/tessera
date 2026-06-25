@@ -1,0 +1,21 @@
+# cargo-audit configuration for the edge identity Worker.
+#
+# RUSTSEC-2023-0071 (rsa "Marvin Attack", medium 5.9) — ACCEPTED / NOT EXPLOITABLE.
+#
+# The `rsa` crate is pulled in TRANSITIVELY only:
+#   rsa <- jsonwebtoken (rust_crypto, RS256 signature *verification* via
+#          DecodingKey::from_rsa_pem)
+#   rsa <- openidconnect (provider JWKS / id_token RS256 verification)
+#
+# The Marvin attack is a timing side-channel against RSA *private-key*
+# operations (PKCS#1 v1.5 decryption / signing). This Worker performs NO RSA
+# private-key operations through the `rsa` crate: all RS256 *signing* is done
+# via the Worker runtime's WebCrypto SubtleCrypto (see `src/webcrypto_rsa.rs`),
+# precisely to avoid this advisory. The `rsa` crate is reached only on the
+# public-key *verification* path, which the advisory does not affect.
+#
+# There is no fixed upstream release ("No fixed upgrade is available!"), so this
+# cannot be resolved by a version bump. Re-evaluate if jsonwebtoken/openidconnect
+# publish a version that drops the `rsa` dependency or if a fix lands.
+[advisories]
+ignore = ["RUSTSEC-2023-0071"]

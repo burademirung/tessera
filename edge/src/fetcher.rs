@@ -6,14 +6,20 @@ use serde_json::Value;
 use worker::*;
 
 /// Fetch JSON from an anchored, allow-listed HTTPS issuer endpoint.
-pub async fn fetch_json_guarded(allow: &IssuerAllowList, url: &str) -> std::result::Result<Value, String> {
+pub async fn fetch_json_guarded(
+    allow: &IssuerAllowList,
+    url: &str,
+) -> std::result::Result<Value, String> {
     check_outbound_url(allow, url).map_err(|e| format!("ssrf guard: {e}"))?;
     let mut init = RequestInit::new();
     init.with_method(Method::Get);
     // Manual redirect handling so a 3xx cannot bounce us to a private host.
     init.with_redirect(RequestRedirect::Manual);
     let req = Request::new_with_init(url, &init).map_err(|e| format!("request: {e}"))?;
-    let mut resp = Fetch::Request(req).send().await.map_err(|e| format!("fetch: {e}"))?;
+    let mut resp = Fetch::Request(req)
+        .send()
+        .await
+        .map_err(|e| format!("fetch: {e}"))?;
     if (300..400).contains(&resp.status_code()) {
         return Err("redirects are not followed for issuer fetches".to_string());
     }

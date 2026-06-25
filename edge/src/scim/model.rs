@@ -7,10 +7,8 @@ use std::collections::BTreeMap;
 
 pub const SCHEMA_USER: &str = "urn:ietf:params:scim:schemas:core:2.0:User";
 pub const SCHEMA_GROUP: &str = "urn:ietf:params:scim:schemas:core:2.0:Group";
-pub const SCHEMA_ENTERPRISE: &str =
-    "urn:ietf:params:scim:schemas:extension:enterprise:2.0:User";
-pub const SCHEMA_LIST_RESPONSE: &str =
-    "urn:ietf:params:scim:api:messages:2.0:ListResponse";
+pub const SCHEMA_ENTERPRISE: &str = "urn:ietf:params:scim:schemas:extension:enterprise:2.0:User";
+pub const SCHEMA_LIST_RESPONSE: &str = "urn:ietf:params:scim:api:messages:2.0:ListResponse";
 pub const SCHEMA_PATCH_OP: &str = "urn:ietf:params:scim:api:messages:2.0:PatchOp";
 
 #[derive(Debug, Clone, Default, Serialize, Deserialize, PartialEq)]
@@ -167,9 +165,7 @@ mod tests {
         });
         let u: ScimUser = serde_json::from_value(body.clone()).unwrap();
         let back = serde_json::to_value(&u).unwrap();
-        assert_eq!(
-            back[SCHEMA_ENTERPRISE]["manager"]["value"], "mgr-1"
-        );
+        assert_eq!(back[SCHEMA_ENTERPRISE]["manager"]["value"], "mgr-1");
     }
 
     #[test]

@@ -31,8 +31,7 @@ pub fn decode_hex_32(s: &str) -> std::result::Result<[u8; 32], String> {
     }
     let mut out = [0u8; 32];
     for i in 0..32 {
-        out[i] = u8::from_str_radix(&s[i * 2..i * 2 + 2], 16)
-            .map_err(|e| format!("hex: {e}"))?;
+        out[i] = u8::from_str_radix(&s[i * 2..i * 2 + 2], 16).map_err(|e| format!("hex: {e}"))?;
     }
     Ok(out)
 }
@@ -59,7 +58,9 @@ mod worker_entry {
         }
         match (req.method(), path.as_str()) {
             (Method::Get, "/.well-known/openid-configuration") => {
-                let cfg = discovery::IssuerConfig { issuer: ISSUER.to_string() };
+                let cfg = discovery::IssuerConfig {
+                    issuer: ISSUER.to_string(),
+                };
                 let mut resp = Response::from_json(&discovery::openid_configuration(&cfg))?;
                 resp.headers_mut()
                     .set("cache-control", "public, max-age=300")?;
@@ -109,7 +110,7 @@ mod worker_entry {
     /// minimal Phase-2 engine seam: a real, ordered sequence of TelemetryEvents
     /// drives the live 3D graph end-to-end.
     async fn handle_demo_run(env: &Env) -> Result<Response> {
-        let now_ms = Date::now().as_millis() as u64;
+        let now_ms = Date::now().as_millis();
         // seq0 from epoch-ms keeps ids monotonic across separate demo runs.
         let seq0 = now_ms;
         for ev in crate::telemetry::emit::demo_sequence(seq0, now_ms) {
@@ -138,7 +139,10 @@ mod worker_entry {
         // {"cloud":"aws|azure|gcp","sub":"<=127 chars"}. Each cloud gets a DISTINCT
         // aud. M1: malformed body -> clean 400 (not a generic 500).
         #[derive(serde::Deserialize)]
-        struct FedReq { cloud: String, sub: String }
+        struct FedReq {
+            cloud: String,
+            sub: String,
+        }
         let body: FedReq = match req.json().await {
             Ok(b) => b,
             Err(_) => return Response::error("bad request", 400),
@@ -148,7 +152,7 @@ mod worker_entry {
             None => return Response::error("unknown cloud", 400),
         };
         let auds = federation::CloudAudiences::production();
-        let now = (Date::now().as_millis() / 1000) as u64;
+        let now = Date::now().as_millis() / 1000;
         let claims =
             match federation::build_federation_claims(&auds, cloud, ISSUER, &body.sub, now, 900) {
                 Ok(c) => c,
@@ -195,8 +199,7 @@ mod worker_entry {
         let (status, sub, exp) = resolve_session(env, &token).await?;
         // TODO(dpop-enforce): if the presented token is DPoP-bound, require a DPoP
         // proof header and call dpop::assert_jkt_bound against the token cnf.jkt.
-        let body =
-            introspect::introspection_response_from_session(status, sub.as_deref(), exp);
+        let body = introspect::introspection_response_from_session(status, sub.as_deref(), exp);
         Response::from_json(&body)
     }
 
@@ -207,9 +210,18 @@ mod worker_entry {
         // Load + VERIFY the signed policy bundle BEFORE building the engine (fail
         // closed on any verify error). Bundle bytes/sig/pubkey come from secrets.
         let engine: std::result::Result<RegorusEngine, String> = (|| {
-            let bundle = env.secret("AUTHZ_BUNDLE").map_err(|_| "no bundle")?.to_string();
-            let sig_b64 = env.secret("AUTHZ_BUNDLE_SIG").map_err(|_| "no sig")?.to_string();
-            let pk_hex = env.secret("AUTHZ_BUNDLE_PUBKEY").map_err(|_| "no pubkey")?.to_string();
+            let bundle = env
+                .secret("AUTHZ_BUNDLE")
+                .map_err(|_| "no bundle")?
+                .to_string();
+            let sig_b64 = env
+                .secret("AUTHZ_BUNDLE_SIG")
+                .map_err(|_| "no sig")?
+                .to_string();
+            let pk_hex = env
+                .secret("AUTHZ_BUNDLE_PUBKEY")
+                .map_err(|_| "no pubkey")?
+                .to_string();
             let sig = util::b64url_decode(sig_b64.trim())?;
             let pk = decode_hex_32(pk_hex.trim())?;
             let b = SignedBundle::parse(bundle.as_bytes(), &sig).map_err(|e| e.to_string())?;
@@ -220,7 +232,9 @@ mod worker_entry {
             Ok(e) => e,
             // No/invalid policy bundle -> deny everything (fail closed).
             Err(reason) => {
-                let d = AuthzDecision::Deny { reason: format!("policy unavailable: {reason}") };
+                let d = AuthzDecision::Deny {
+                    reason: format!("policy unavailable: {reason}"),
+                };
                 return Response::from_json(&decision_response(&d)).map(|r| r.with_status(200));
             }
         };
@@ -295,7 +309,7 @@ mod worker_entry {
         // mint the opaque session for the authenticated principal and set the
         // hardened cookie. The principal sub is derived server-side.
         let sub = format!("rp:{}", &got_state[..8.min(got_state.len())]);
-        let now = (Date::now().as_millis() / 1000) as u64;
+        let now = Date::now().as_millis() / 1000;
         let token = session::new_opaque_token().map_err(Error::RustError)?;
         let ttl = 3600u64;
         create_session(env, &token, &sub, now, now + ttl).await?;
@@ -327,12 +341,20 @@ mod worker_entry {
         ns.id_from_name("global")?.get_stub()
     }
 
-    async fn create_session(env: &Env, token: &str, sub: &str, created: u64, expires: u64) -> Result<()> {
+    async fn create_session(
+        env: &Env,
+        token: &str,
+        sub: &str,
+        created: u64,
+        expires: u64,
+    ) -> Result<()> {
         let stub = session_stub(env)?;
         let body = serde_json::json!({ "token": token, "sub": sub, "created": created, "expires": expires });
         let r = Request::new_with_init(
             "https://do/create",
-            RequestInit::new().with_method(Method::Post).with_body(Some(body.to_string().into())),
+            RequestInit::new()
+                .with_method(Method::Post)
+                .with_body(Some(body.to_string().into())),
         )?;
         let _ = stub.fetch_with_request(r).await?;
         Ok(())
@@ -343,7 +365,9 @@ mod worker_entry {
         let body = serde_json::json!({ "token": token });
         let r = Request::new_with_init(
             "https://do/revoke",
-            RequestInit::new().with_method(Method::Post).with_body(Some(body.to_string().into())),
+            RequestInit::new()
+                .with_method(Method::Post)
+                .with_body(Some(body.to_string().into())),
         )?;
         let _ = stub.fetch_with_request(r).await?;
         Ok(())
@@ -358,7 +382,9 @@ mod worker_entry {
         let body = serde_json::json!({ "token": token });
         let r = Request::new_with_init(
             "https://do/resolve",
-            RequestInit::new().with_method(Method::Post).with_body(Some(body.to_string().into())),
+            RequestInit::new()
+                .with_method(Method::Post)
+                .with_body(Some(body.to_string().into())),
         )?;
         let mut resp = stub.fetch_with_request(r).await?;
         let v: serde_json::Value = resp.json().await.unwrap_or(serde_json::Value::Null);
@@ -377,8 +403,7 @@ mod worker_entry {
     fn load_internal_signer(env: &Env) -> Result<internal_token::InternalSigner> {
         let hex = env.secret("INTERNAL_ED25519_SEED")?.to_string();
         let bytes = decode_hex_32(&hex).map_err(Error::RustError)?;
-        internal_token::from_signing_key_bytes("int-2026-06", &bytes)
-            .map_err(Error::RustError)
+        internal_token::from_signing_key_bytes("int-2026-06", &bytes).map_err(Error::RustError)
     }
 
     /// Import the cloud RS256 private key from the `CLOUD_RSA_PKCS8_DER_B64` Secret

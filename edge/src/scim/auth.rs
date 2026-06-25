@@ -46,7 +46,10 @@ mod tests {
 
     fn verifier(token: &str) -> Option<VerifiedToken> {
         if token == "good" {
-            Some(VerifiedToken { tenant_id: "t1".into(), scopes: vec!["scim".into()] })
+            Some(VerifiedToken {
+                tenant_id: "t1".into(),
+                scopes: vec!["scim".into()],
+            })
         } else {
             None
         }
@@ -78,14 +81,20 @@ mod tests {
 
     #[test]
     fn cross_tenant_access_is_404_not_403() {
-        let ctx = TenantCtx { tenant_id: "t1".into(), scopes: vec![] };
+        let ctx = TenantCtx {
+            tenant_id: "t1".into(),
+            scopes: vec![],
+        };
         let err = ensure_owns(&ctx, "t2").unwrap_err();
         assert_eq!(err.status, 404); // BOLA: hide existence
     }
 
     #[test]
     fn same_tenant_access_ok() {
-        let ctx = TenantCtx { tenant_id: "t1".into(), scopes: vec![] };
+        let ctx = TenantCtx {
+            tenant_id: "t1".into(),
+            scopes: vec![],
+        };
         assert!(ensure_owns(&ctx, "t1").is_ok());
     }
 }

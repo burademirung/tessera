@@ -67,8 +67,16 @@ pub async fn sign_jwt_rs256(
     header: &Value,
     claims: &Value,
 ) -> Result<String, String> {
-    let h = b64url_encode(serde_json::to_vec(header).map_err(|e| e.to_string())?.as_slice());
-    let p = b64url_encode(serde_json::to_vec(claims).map_err(|e| e.to_string())?.as_slice());
+    let h = b64url_encode(
+        serde_json::to_vec(header)
+            .map_err(|e| e.to_string())?
+            .as_slice(),
+    );
+    let p = b64url_encode(
+        serde_json::to_vec(claims)
+            .map_err(|e| e.to_string())?
+            .as_slice(),
+    );
     let signing_input = format!("{h}.{p}");
     let sig = sign_rs256(key, signing_input.as_bytes()).await?;
     Ok(format!("{signing_input}.{}", b64url_encode(&sig)))

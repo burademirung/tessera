@@ -31,7 +31,7 @@ pub fn etag(version: u64, body: &Value) -> String {
 pub fn check_if_match(if_match: Option<&str>, current_etag: &str) -> Result<(), ScimError> {
     match if_match {
         None => Ok(()),
-        Some(v) if v == "*" => Ok(()),
+        Some("*") => Ok(()),
         Some(v) if v == current_etag => Ok(()),
         Some(_) => Err(ScimError::precondition_failed(
             "resource has been modified (If-Match mismatch)",
@@ -104,12 +104,12 @@ mod tests {
             "urn:ietf:params:scim:schemas:extension:enterprise:2.0:User": { "department": "X" }
         });
         let cleaned = apply_writable_allow_list(&incoming, USER_WRITABLE);
-        assert!(cleaned.get("id").is_none());          // server-owned dropped
-        assert!(cleaned.get("meta").is_none());        // server-owned dropped
-        assert!(cleaned.get("isAdmin").is_none());     // mass-assignment dropped
-        assert_eq!(cleaned["userName"], "ok");         // allow-listed kept
-        assert_eq!(cleaned["active"], json!(false));   // allow-listed kept
-        assert!(cleaned                                 // extension kept
+        assert!(cleaned.get("id").is_none()); // server-owned dropped
+        assert!(cleaned.get("meta").is_none()); // server-owned dropped
+        assert!(cleaned.get("isAdmin").is_none()); // mass-assignment dropped
+        assert_eq!(cleaned["userName"], "ok"); // allow-listed kept
+        assert_eq!(cleaned["active"], json!(false)); // allow-listed kept
+        assert!(cleaned // extension kept
             .get("urn:ietf:params:scim:schemas:extension:enterprise:2.0:User")
             .is_some());
     }

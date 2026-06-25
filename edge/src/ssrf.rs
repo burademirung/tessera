@@ -24,9 +24,9 @@ fn host_of(url: &str) -> Result<String, String> {
         .strip_prefix("https://")
         .ok_or("only https:// URLs are allowed")?;
     let host = after.split(['/', '?', '#']).next().unwrap_or("");
-    let host = host.split('@').last().unwrap_or(host); // drop userinfo
+    let host = host.split('@').next_back().unwrap_or(host); // drop userinfo
     let host = host.trim_start_matches('[').trim_end_matches(']'); // ipv6 brackets
-    // strip :port
+                                                                   // strip :port
     let host = if let Some(idx) = host.rfind(':') {
         let (h, p) = host.split_at(idx);
         if p[1..].chars().all(|c| c.is_ascii_digit()) && !h.is_empty() {
@@ -69,7 +69,7 @@ fn ipv4_is_blocked(o: &[u8; 4]) -> bool {
         || (a == 192 && b == 168) // 192.168/16
         || (a == 172 && (16..=31).contains(&b)) // 172.16/12
         || (a == 169 && b == 254) // link-local + metadata
-        || a == 0           // 0.0.0.0/8 (incl. unspecified)
+        || a == 0 // 0.0.0.0/8 (incl. unspecified)
 }
 
 fn is_blocked_literal(host: &str) -> bool {
@@ -137,7 +137,12 @@ fn mapped_ipv4(host: &str) -> Option<[u8; 4]> {
     if groups.len() == 2 {
         let hi = u16::from_str_radix(groups[0], 16).ok()?;
         let lo = u16::from_str_radix(groups[1], 16).ok()?;
-        return Some([(hi >> 8) as u8, (hi & 0xff) as u8, (lo >> 8) as u8, (lo & 0xff) as u8]);
+        return Some([
+            (hi >> 8) as u8,
+            (hi & 0xff) as u8,
+            (lo >> 8) as u8,
+            (lo & 0xff) as u8,
+        ]);
     }
     None
 }
@@ -149,9 +154,10 @@ pub fn check_outbound_url(allow: &IssuerAllowList, url: &str) -> Result<(), Stri
     if is_blocked_literal(&host) {
         return Err(format!("blocked host: {host}"));
     }
-    let anchored = allow.issuers.iter().any(|iss| {
-        host_of(iss).map(|h| h == host).unwrap_or(false)
-    });
+    let anchored = allow
+        .issuers
+        .iter()
+        .any(|iss| host_of(iss).map(|h| h == host).unwrap_or(false));
     if !anchored {
         return Err(format!("host not in issuer allow-list: {host}"));
     }
@@ -173,12 +179,20 @@ mod tests {
     use serde_json::json;
 
     fn allow() -> IssuerAllowList {
-        new_allow_list(&["https://okta.example", "https://entra.example", "https://idp.lifecycle.example"])
+        new_allow_list(&[
+            "https://okta.example",
+            "https://entra.example",
+            "https://idp.lifecycle.example",
+        ])
     }
 
     #[test]
     fn allows_an_anchored_https_issuer_host() {
-        assert!(check_outbound_url(&allow(), "https://okta.example/.well-known/openid-configuration").is_ok());
+        assert!(check_outbound_url(
+            &allow(),
+            "https://okta.example/.well-known/openid-configuration"
+        )
+        .is_ok());
         assert!(check_outbound_url(&allow(), "https://idp.lifecycle.example/jwks").is_ok());
     }
 
@@ -199,7 +213,14 @@ mod tests {
 
     #[test]
     fn blocks_rfc1918_loopback_and_linklocal() {
-        for h in ["https://10.0.0.5/jwks", "https://192.168.1.1/jwks", "https://172.16.0.1/jwks", "https://127.0.0.1/jwks", "https://[::1]/jwks", "https://169.254.0.1/jwks"] {
+        for h in [
+            "https://10.0.0.5/jwks",
+            "https://192.168.1.1/jwks",
+            "https://172.16.0.1/jwks",
+            "https://127.0.0.1/jwks",
+            "https://[::1]/jwks",
+            "https://169.254.0.1/jwks",
+        ] {
             assert!(check_outbound_url(&allow(), h).is_err(), "should block {h}");
         }
     }

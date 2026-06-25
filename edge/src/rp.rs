@@ -27,7 +27,10 @@ pub struct AuthRequest {
 /// Derive the S256 PKCE challenge from a verifier (RFC 7636 §4.2).
 pub fn pkce_from_verifier(verifier: &str) -> Result<PkcePair, String> {
     if verifier.len() < 43 || verifier.len() > 128 {
-        return Err(format!("verifier length {} out of 43..=128", verifier.len()));
+        return Err(format!(
+            "verifier length {} out of 43..=128",
+            verifier.len()
+        ));
     }
     let digest = Sha256::digest(verifier.as_bytes());
     Ok(PkcePair {
@@ -125,7 +128,13 @@ mod tests {
 
     #[test]
     fn authorize_url_sends_code_challenge_method_s256_explicitly() {
-        let req = build_authorize(&cfg(), "st-abc", "nc-xyz", "dBjftJeZ4CVP-mB92K27uhbUJU1p1r_wW1gFWFOEjXk").unwrap();
+        let req = build_authorize(
+            &cfg(),
+            "st-abc",
+            "nc-xyz",
+            "dBjftJeZ4CVP-mB92K27uhbUJU1p1r_wW1gFWFOEjXk",
+        )
+        .unwrap();
         assert!(req.authorize_url.contains("response_type=code"));
         assert!(req.authorize_url.contains("code_challenge_method=S256"));
         assert!(req.authorize_url.contains("state=st-abc"));
@@ -136,13 +145,31 @@ mod tests {
 
     #[test]
     fn callback_requires_state_match() {
-        assert!(check_callback("st-abc", "st-abc", "https://okta.example", Some("https://okta.example")).is_ok());
-        assert!(check_callback("st-abc", "WRONG", "https://okta.example", Some("https://okta.example")).is_err());
+        assert!(check_callback(
+            "st-abc",
+            "st-abc",
+            "https://okta.example",
+            Some("https://okta.example")
+        )
+        .is_ok());
+        assert!(check_callback(
+            "st-abc",
+            "WRONG",
+            "https://okta.example",
+            Some("https://okta.example")
+        )
+        .is_err());
     }
 
     #[test]
     fn callback_enforces_rfc9207_issuer() {
-        assert!(check_callback("s", "s", "https://okta.example", Some("https://entra.example")).is_err());
+        assert!(check_callback(
+            "s",
+            "s",
+            "https://okta.example",
+            Some("https://entra.example")
+        )
+        .is_err());
         assert!(check_callback("s", "s", "https://okta.example", None).is_err());
     }
 }

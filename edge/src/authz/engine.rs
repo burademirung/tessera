@@ -38,8 +38,7 @@ impl RegorusEngine {
                 .add_policy((*name).to_string(), (*src).to_string())
                 .map_err(|e| AuthzError::Policy(e.to_string()))?;
         }
-        let data =
-            Value::from_json_str(data_json).map_err(|e| AuthzError::Data(e.to_string()))?;
+        let data = Value::from_json_str(data_json).map_err(|e| AuthzError::Data(e.to_string()))?;
         engine
             .add_data(data)
             .map_err(|e| AuthzError::Data(e.to_string()))?;
@@ -57,16 +56,26 @@ impl RegorusEngine {
         let input = match Value::from_json_str(input_json) {
             Ok(v) => v,
             // malformed input -> deny (fail closed)
-            Err(e) => return AuthzDecision::Deny { reason: format!("invalid input: {e}") },
+            Err(e) => {
+                return AuthzDecision::Deny {
+                    reason: format!("invalid input: {e}"),
+                }
+            }
         };
         engine.set_input(input);
 
         match engine.eval_rule(ALLOW_QUERY.to_string()) {
             Ok(Value::Bool(true)) => AuthzDecision::Allow,
             // false, undefined, error, or non-bool -> deny (fail closed)
-            Ok(Value::Bool(false)) => AuthzDecision::Deny { reason: "policy denied".into() },
-            Ok(_) => AuthzDecision::Deny { reason: "non-boolean decision".into() },
-            Err(e) => AuthzDecision::Deny { reason: format!("policy eval error: {e}") },
+            Ok(Value::Bool(false)) => AuthzDecision::Deny {
+                reason: "policy denied".into(),
+            },
+            Ok(_) => AuthzDecision::Deny {
+                reason: "non-boolean decision".into(),
+            },
+            Err(e) => AuthzDecision::Deny {
+                reason: format!("policy eval error: {e}"),
+            },
         }
     }
 
@@ -118,7 +127,12 @@ mod tests {
 
     fn engine() -> RegorusEngine {
         RegorusEngine::from_sources(
-            &[("main.rego", MAIN), ("rbac.rego", RBAC), ("abac.rego", ABAC), ("sod.rego", SOD)],
+            &[
+                ("main.rego", MAIN),
+                ("rbac.rego", RBAC),
+                ("abac.rego", ABAC),
+                ("sod.rego", SOD),
+            ],
             DATA,
         )
         .expect("engine builds")

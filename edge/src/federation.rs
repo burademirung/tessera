@@ -7,10 +7,11 @@ use subtle::ConstantTimeEq;
 /// Authenticate the internal caller of `/federate`. The Go control-plane presents
 /// `Authorization: Bearer <FEDERATION_API_TOKEN>`; the secret is configured as a
 /// Worker secret. FAIL-CLOSED:
-///   - missing/empty configured secret -> false (never default-allow)
-///   - missing/non-Bearer header        -> false
-///   - empty presented token            -> false
-///   - mismatch                         -> false
+/// - missing/empty configured secret -> false (never default-allow)
+/// - missing/non-Bearer header        -> false
+/// - empty presented token            -> false
+/// - mismatch                         -> false
+///
 /// The comparison is CONSTANT-TIME (subtle::ct_eq) to avoid leaking the secret via
 /// timing. Length is not secret, so a fast length pre-check is fine. Pure +
 /// host-testable; the wasm call site reads `expected` from the Worker secret.
@@ -132,36 +133,69 @@ mod tests {
         assert_eq!(audience_for(&cfg, Cloud::Aws), cfg.aws);
         assert_eq!(audience_for(&cfg, Cloud::Azure), cfg.azure);
         assert_eq!(audience_for(&cfg, Cloud::Gcp), cfg.gcp);
-        assert_ne!(audience_for(&cfg, Cloud::Aws), audience_for(&cfg, Cloud::Azure));
+        assert_ne!(
+            audience_for(&cfg, Cloud::Aws),
+            audience_for(&cfg, Cloud::Azure)
+        );
     }
 
     #[test]
     fn azure_audience_is_the_required_constant() {
-        assert_eq!(audience_for(&auds(), Cloud::Azure), "api://AzureADTokenExchange");
+        assert_eq!(
+            audience_for(&auds(), Cloud::Azure),
+            "api://AzureADTokenExchange"
+        );
     }
 
     #[test]
     fn builds_claims_with_correct_aud_and_no_azp() {
         let cfg = auds();
-        let c = build_federation_claims(&cfg, Cloud::Gcp, "https://idp.lifecycle.example", "tenant-a:wl-1", NOW, 900).unwrap();
+        let c = build_federation_claims(
+            &cfg,
+            Cloud::Gcp,
+            "https://idp.lifecycle.example",
+            "tenant-a:wl-1",
+            NOW,
+            900,
+        )
+        .unwrap();
         assert_eq!(c["aud"], cfg.gcp);
         assert_eq!(c["iss"], "https://idp.lifecycle.example");
         assert_eq!(c["sub"], "tenant-a:wl-1");
         assert_eq!(c["exp"].as_u64().unwrap(), NOW + 900);
-        assert!(c.get("azp").is_none(), "AWS treats azp as audience; must omit");
+        assert!(
+            c.get("azp").is_none(),
+            "AWS treats azp as audience; must omit"
+        );
     }
 
     #[test]
     fn rejects_sub_over_127_chars() {
         let cfg = auds();
         let long = "x".repeat(128);
-        assert!(build_federation_claims(&cfg, Cloud::Aws, "https://idp.lifecycle.example", &long, NOW, 900).is_err());
+        assert!(build_federation_claims(
+            &cfg,
+            Cloud::Aws,
+            "https://idp.lifecycle.example",
+            &long,
+            NOW,
+            900
+        )
+        .is_err());
     }
 
     #[test]
     fn rejects_ttl_over_24h_for_gcp_limit() {
         let cfg = auds();
-        assert!(build_federation_claims(&cfg, Cloud::Gcp, "https://idp.lifecycle.example", "s", NOW, 86_401).is_err());
+        assert!(build_federation_claims(
+            &cfg,
+            Cloud::Gcp,
+            "https://idp.lifecycle.example",
+            "s",
+            NOW,
+            86_401
+        )
+        .is_err());
     }
 
     #[test]
@@ -177,11 +211,17 @@ mod tests {
         // No header -> rejected.
         assert!(!caller_is_authorized(None, "fed-secret"));
         // Non-Bearer scheme -> rejected.
-        assert!(!caller_is_authorized(Some("Basic fed-secret"), "fed-secret"));
+        assert!(!caller_is_authorized(
+            Some("Basic fed-secret"),
+            "fed-secret"
+        ));
         // Empty presented token -> rejected.
         assert!(!caller_is_authorized(Some("Bearer "), "fed-secret"));
         // Wrong token (same length) -> rejected.
-        assert!(!caller_is_authorized(Some("Bearer fed-secreX"), "fed-secret"));
+        assert!(!caller_is_authorized(
+            Some("Bearer fed-secreX"),
+            "fed-secret"
+        ));
         // Wrong token (diff length) -> rejected.
         assert!(!caller_is_authorized(Some("Bearer nope"), "fed-secret"));
         // Unconfigured secret must never authenticate, even an empty token.
@@ -191,7 +231,10 @@ mod tests {
 
     #[test]
     fn federate_caller_auth_accepts_correct_token() {
-        assert!(caller_is_authorized(Some("Bearer fed-secret"), "fed-secret"));
+        assert!(caller_is_authorized(
+            Some("Bearer fed-secret"),
+            "fed-secret"
+        ));
     }
 
     #[test]

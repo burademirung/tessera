@@ -33,7 +33,10 @@ impl SignedBundle {
     pub fn parse(bundle: &[u8], sig: &[u8]) -> Result<Self, AuthzError> {
         let manifest: Manifest =
             serde_json::from_slice(bundle).map_err(|e| AuthzError::Data(e.to_string()))?;
-        Ok(Self { sig: sig.to_vec(), manifest })
+        Ok(Self {
+            sig: sig.to_vec(),
+            manifest,
+        })
     }
 
     /// Recompute every hash and verify the detached Ed25519 signature.
@@ -66,10 +69,9 @@ impl SignedBundle {
         }))?;
         let digest = Sha256::digest(&signing_payload);
 
-        let vk = VerifyingKey::from_bytes(public_key)
-            .map_err(|e| AuthzError::Data(e.to_string()))?;
-        let sig = Signature::from_slice(&self.sig)
-            .map_err(|e| AuthzError::Data(e.to_string()))?;
+        let vk =
+            VerifyingKey::from_bytes(public_key).map_err(|e| AuthzError::Data(e.to_string()))?;
+        let sig = Signature::from_slice(&self.sig).map_err(|e| AuthzError::Data(e.to_string()))?;
         vk.verify(&digest, &sig)
             .map_err(|_| AuthzError::Data("signature verification failed".into()))?;
         Ok(())
@@ -168,10 +170,16 @@ mod tests {
         let input = r#"{"subject":{"id":"u1","roles":["reader"],"tenant":"t1","mfa":false},
             "resource":{"type":"user","id":"r1","tenant":"t1"},"action":"read",
             "environment":{"now_epoch":1782259200,"device_posture":"byod"}}"#;
-        assert!(matches!(engine.decide_json(input), super::super::AuthzDecision::Allow));
+        assert!(matches!(
+            engine.decide_json(input),
+            super::super::AuthzDecision::Allow
+        ));
     }
 
     fn hex_decode(s: &str) -> Vec<u8> {
-        (0..s.len()).step_by(2).map(|i| u8::from_str_radix(&s[i..i + 2], 16).unwrap()).collect()
+        (0..s.len())
+            .step_by(2)
+            .map(|i| u8::from_str_radix(&s[i..i + 2], 16).unwrap())
+            .collect()
     }
 }

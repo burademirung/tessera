@@ -9,7 +9,10 @@ pub struct EventRing {
 
 impl EventRing {
     pub fn new(cap: usize) -> Self {
-        Self { cap: cap.max(1), items: VecDeque::with_capacity(cap.max(1)) }
+        Self {
+            cap: cap.max(1),
+            items: VecDeque::with_capacity(cap.max(1)),
+        }
     }
 
     pub fn push(&mut self, ev: TelemetryEvent) {

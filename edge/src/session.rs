@@ -86,7 +86,12 @@ mod tests {
     const NOW: u64 = 1_750_000_000;
 
     fn rec() -> SessionRecord {
-        SessionRecord { sub: "u-1".into(), created: NOW - 10, expires: NOW + 600, revoked: false }
+        SessionRecord {
+            sub: "u-1".into(),
+            created: NOW - 10,
+            expires: NOW + 600,
+            revoked: false,
+        }
     }
 
     #[test]
@@ -127,10 +132,16 @@ mod tests {
         assert!(c.starts_with("__Host-sid=opaque-token-abc"));
         assert!(c.contains("HttpOnly"), "must be HttpOnly: {c}");
         assert!(c.contains("Secure"), "must be Secure: {c}");
-        assert!(c.contains("SameSite=Strict"), "must be SameSite=Strict: {c}");
+        assert!(
+            c.contains("SameSite=Strict"),
+            "must be SameSite=Strict: {c}"
+        );
         assert!(c.contains("Path=/"), "must set Path=/: {c}");
         // __Host- prefix forbids a Domain attribute.
-        assert!(!c.to_lowercase().contains("domain="), "must NOT set Domain: {c}");
+        assert!(
+            !c.to_lowercase().contains("domain="),
+            "must NOT set Domain: {c}"
+        );
         assert!(c.contains("Max-Age=3600"));
     }
 
@@ -148,7 +159,10 @@ mod tests {
             parse_session_cookie("foo=1; __Host-sid=tok-xyz; bar=2").as_deref(),
             Some("tok-xyz")
         );
-        assert_eq!(parse_session_cookie("__Host-sid=only").as_deref(), Some("only"));
+        assert_eq!(
+            parse_session_cookie("__Host-sid=only").as_deref(),
+            Some("only")
+        );
         assert_eq!(parse_session_cookie("other=1"), None);
         assert_eq!(parse_session_cookie("__Host-sid="), None);
     }

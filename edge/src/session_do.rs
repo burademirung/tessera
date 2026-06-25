@@ -55,11 +55,9 @@ impl DurableObject for SessionStore {
             }
             (Method::Post, "/resolve") => {
                 let b: TokenBody = req.json().await?;
-                let now = (Date::now().as_millis() / 1000) as u64;
-                let rec: Option<SessionRecord> = storage
-                    .get(&format!("s:{}", b.token))
-                    .await
-                    .unwrap_or(None);
+                let now = Date::now().as_millis() / 1000;
+                let rec: Option<SessionRecord> =
+                    storage.get(&format!("s:{}", b.token)).await.unwrap_or(None);
                 let status = evaluate(rec.as_ref(), now);
                 let body = serde_json::json!({
                     "status": match status {

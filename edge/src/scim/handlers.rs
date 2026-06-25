@@ -10,10 +10,11 @@ pub const SCIM_CONTENT_TYPE: &str = "application/scim+json";
 
 /// Verify a presented SCIM bearer against the configured secret and derive the
 /// tenant from verified configuration. FAIL-CLOSED:
-///   - empty presented token  -> None
-///   - empty expected secret   -> None (secret not configured)
-///   - empty tenant            -> None (tenant not configured)
-///   - mismatch                -> None
+/// - empty presented token  -> None
+/// - empty expected secret   -> None (secret not configured)
+/// - empty tenant            -> None (tenant not configured)
+/// - mismatch                -> None
+///
 /// The secret comparison is CONSTANT-TIME (no early-exit `==` on the secret) to
 /// avoid leaking the secret via timing. The tenant is taken ONLY from verified
 /// config — never a hardcoded literal.
@@ -53,8 +54,8 @@ pub enum Route {
     ServiceProviderConfig,
     ResourceTypes,
     Schemas,
-    UsersCollection,        // GET (list/filter) | POST (create)
-    UserItem(String),       // GET | PUT | PATCH | DELETE
+    UsersCollection,  // GET (list/filter) | POST (create)
+    UserItem(String), // GET | PUT | PATCH | DELETE
     GroupsCollection,
     GroupItem(String),
     NotFound,
@@ -153,9 +154,16 @@ mod wasm_dispatch {
         let id = su.body["id"].as_str().unwrap_or_default();
         let user_name = su.body["userName"].as_str().unwrap_or_default();
         let external_id = su.body["externalId"].as_str();
-        let active = if su.body["active"].as_bool().unwrap_or(true) { 1 } else { 0 };
+        let active = if su.body["active"].as_bool().unwrap_or(true) {
+            1
+        } else {
+            0
+        };
         let display_name = su.body["displayName"].as_str();
-        let created = su.body["meta"]["created"].as_str().unwrap_or(&now_iso()).to_string();
+        let created = su.body["meta"]["created"]
+            .as_str()
+            .unwrap_or(&now_iso())
+            .to_string();
         let lm = now_iso();
         let stmt = db
             .prepare(
@@ -213,15 +221,11 @@ mod wasm_dispatch {
         // is absent we FAIL CLOSED (401) — never default-allow.
         let expected = match env.secret("SCIM_BEARER_TOKEN") {
             Ok(s) => s.to_string(),
-            Err(_) => {
-                return err_response(&ScimError::unauthorized("scim auth not configured"))
-            }
+            Err(_) => return err_response(&ScimError::unauthorized("scim auth not configured")),
         };
         let tenant = match env.secret("SCIM_TENANT_ID") {
             Ok(s) => s.to_string(),
-            Err(_) => {
-                return err_response(&ScimError::unauthorized("scim auth not configured"))
-            }
+            Err(_) => return err_response(&ScimError::unauthorized("scim auth not configured")),
         };
         let auth_header = req.headers().get("authorization").ok().flatten();
         let verify = |presented: &str| verify_token(presented, &expected, &tenant);
@@ -232,7 +236,9 @@ mod wasm_dispatch {
 
         let method_str = format!("{method:?}").to_uppercase();
         match route(&method_str, &path) {
-            Route::ServiceProviderConfig => json_response(200, &discovery::service_provider_config()),
+            Route::ServiceProviderConfig => {
+                json_response(200, &discovery::service_provider_config())
+            }
             Route::ResourceTypes => json_response(200, &discovery::resource_types()),
             Route::Schemas => json_response(200, &discovery::schemas()),
 
@@ -277,7 +283,11 @@ mod wasm_dispatch {
         };
         let nid = new_id();
         let outcome = {
-            let mut svc = UserService { store: &mut snap, new_id: &|| nid.clone(), now: &now_iso };
+            let mut svc = UserService {
+                store: &mut snap,
+                new_id: &|| nid.clone(),
+                now: &now_iso,
+            };
             svc.create(ctx, body)
         };
         match outcome {
@@ -297,7 +307,11 @@ mod wasm_dispatch {
 
     async fn users_get(env: &Env, ctx: &TenantCtx, id: &str) -> worker::Result<Response> {
         let mut snap = load_snapshot(env, &ctx.tenant_id).await?;
-        let svc = UserService { store: &mut snap, new_id: &new_id, now: &now_iso };
+        let svc = UserService {
+            store: &mut snap,
+            new_id: &new_id,
+            now: &now_iso,
+        };
         match svc.get(ctx, id) {
             Ok((status, body, tag)) => {
                 let mut resp = json_response(status, &body)?;
@@ -345,7 +359,11 @@ mod wasm_dispatch {
         }
 
         let mut snap = load_snapshot(env, &ctx.tenant_id).await?;
-        let svc = UserService { store: &mut snap, new_id: &new_id, now: &now_iso };
+        let svc = UserService {
+            store: &mut snap,
+            new_id: &new_id,
+            now: &now_iso,
+        };
         let (status, body, _) = svc.list(ctx, &page);
         json_response(status, &body)
     }
@@ -399,7 +417,11 @@ mod wasm_dispatch {
     ) -> worker::Result<Response> {
         let mut snap = load_snapshot(env, &ctx.tenant_id).await?;
         let outcome = {
-            let mut svc = UserService { store: &mut snap, new_id: &new_id, now: &now_iso };
+            let mut svc = UserService {
+                store: &mut snap,
+                new_id: &new_id,
+                now: &now_iso,
+            };
             svc.replace(ctx, id, body, if_match)
         };
         finish_write(env, ctx, id, &mut snap, outcome).await
@@ -414,7 +436,11 @@ mod wasm_dispatch {
     ) -> worker::Result<Response> {
         let mut snap = load_snapshot(env, &ctx.tenant_id).await?;
         let outcome = {
-            let mut svc = UserService { store: &mut snap, new_id: &new_id, now: &now_iso };
+            let mut svc = UserService {
+                store: &mut snap,
+                new_id: &new_id,
+                now: &now_iso,
+            };
             svc.patch(ctx, id, body, if_match)
         };
         finish_write(env, ctx, id, &mut snap, outcome).await
@@ -469,11 +495,23 @@ mod tests {
     fn routes_collections_and_items() {
         assert_eq!(route("GET", "/scim/v2/Users"), Route::UsersCollection);
         assert_eq!(route("POST", "/scim/v2/Users"), Route::UsersCollection);
-        assert_eq!(route("GET", "/scim/v2/Users/abc"), Route::UserItem("abc".into()));
-        assert_eq!(route("PATCH", "/scim/v2/Users/abc"), Route::UserItem("abc".into()));
-        assert_eq!(route("DELETE", "/scim/v2/Groups/g1"), Route::GroupItem("g1".into()));
+        assert_eq!(
+            route("GET", "/scim/v2/Users/abc"),
+            Route::UserItem("abc".into())
+        );
+        assert_eq!(
+            route("PATCH", "/scim/v2/Users/abc"),
+            Route::UserItem("abc".into())
+        );
+        assert_eq!(
+            route("DELETE", "/scim/v2/Groups/g1"),
+            Route::GroupItem("g1".into())
+        );
         assert_eq!(route("GET", "/scim/v2/Schemas"), Route::Schemas);
-        assert_eq!(route("GET", "/scim/v2/ServiceProviderConfig"), Route::ServiceProviderConfig);
+        assert_eq!(
+            route("GET", "/scim/v2/ServiceProviderConfig"),
+            Route::ServiceProviderConfig
+        );
     }
 
     #[test]
@@ -498,7 +536,10 @@ mod tests {
         assert_eq!(sql.where_clause, "user_name = ?");
         assert_eq!(sql.binds, vec!["bjensen@example.com".to_string()]);
 
-        let page = Page { start_index: 1, count: 50 };
+        let page = Page {
+            start_index: 1,
+            count: 50,
+        };
         let (query, _l, _o) = select_by_filter_sql(&sql.where_clause, &page);
         assert!(query.contains("WHERE tenant = ? AND (user_name = ?)"));
 

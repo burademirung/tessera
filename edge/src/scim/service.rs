@@ -76,17 +76,25 @@ impl<'a, S: UserStore> UserService<'a, S> {
             ScimError::bad_request(ScimErrorType::InvalidValue, "userName is required")
         })?;
         // De-dup by userName AND externalId.
-        if self.store.find_by_username(&ctx.tenant_id, user_name).is_some() {
+        if self
+            .store
+            .find_by_username(&ctx.tenant_id, user_name)
+            .is_some()
+        {
             return Err(ScimError::conflict("userName already exists"));
         }
         if let Some(ext) = clean["externalId"].as_str() {
-            if self.store.find_by_external_id(&ctx.tenant_id, ext).is_some() {
+            if self
+                .store
+                .find_by_external_id(&ctx.tenant_id, ext)
+                .is_some()
+            {
                 return Err(ScimError::conflict("externalId already exists"));
             }
         }
         let id = (self.new_id)();
         clean["id"] = json!(id);
-        if clean["schemas"].as_array().map_or(true, |a| a.is_empty()) {
+        if clean["schemas"].as_array().is_none_or(|a| a.is_empty()) {
             clean["schemas"] = json!([SCHEMA_USER]);
         }
         clean["meta"] = json!({ "created": (self.now)() });
@@ -105,12 +113,13 @@ impl<'a, S: UserStore> UserService<'a, S> {
 
     pub fn list(&self, ctx: &TenantCtx, page: &Page) -> Outcome {
         let (rows, total) = self.store.list(&ctx.tenant_id, page);
-        let resources: Vec<Value> = rows
-            .into_iter()
-            .map(|su| self.finalize(su).1)
-            .collect();
+        let resources: Vec<Value> = rows.into_iter().map(|su| self.finalize(su).1).collect();
         let n = resources.len();
-        (200, list_response(resources, total, page.start_index, n), None)
+        (
+            200,
+            list_response(resources, total, page.start_index, n),
+            None,
+        )
     }
 
     pub fn replace(
@@ -149,7 +158,7 @@ impl<'a, S: UserStore> UserService<'a, S> {
         check_if_match(if_match, &self.etag_of(&existing))?;
         let ops = normalize_patch(&body)?;
         let patched = apply_patch(&existing.body, &ops)?; // atomic
-        // Re-apply allow-list: PATCH must not let a client set server-owned fields.
+                                                          // Re-apply allow-list: PATCH must not let a client set server-owned fields.
         let mut clean = apply_writable_allow_list(&patched, USER_WRITABLE);
         clean["id"] = json!(id);
         clean["meta"] = json!({ "created": existing.body["meta"]["created"].clone() });
@@ -183,64 +192,94 @@ mod tests {
     }
     impl UserStore for MemStore {
         fn find_by_username(&self, tenant: &str, user_name: &str) -> Option<StoredUser> {
-            self.rows.values().find(|s| {
-                s.tenant == tenant && s.body["userName"].as_str() == Some(user_name)
-            }).cloned()
+            self.rows
+                .values()
+                .find(|s| s.tenant == tenant && s.body["userName"].as_str() == Some(user_name))
+                .cloned()
         }
         fn find_by_external_id(&self, tenant: &str, external_id: &str) -> Option<StoredUser> {
-            self.rows.values().find(|s| {
-                s.tenant == tenant && s.body["externalId"].as_str() == Some(external_id)
-            }).cloned()
+            self.rows
+                .values()
+                .find(|s| s.tenant == tenant && s.body["externalId"].as_str() == Some(external_id))
+                .cloned()
         }
         fn get(&self, tenant: &str, id: &str) -> Option<StoredUser> {
-            self.rows.get(&(tenant.to_string(), id.to_string())).cloned()
+            self.rows
+                .get(&(tenant.to_string(), id.to_string()))
+                .cloned()
         }
         fn list(&self, tenant: &str, _page: &Page) -> (Vec<StoredUser>, usize) {
-            let mut v: Vec<StoredUser> =
-                self.rows.values().filter(|s| s.tenant == tenant).cloned().collect();
+            let mut v: Vec<StoredUser> = self
+                .rows
+                .values()
+                .filter(|s| s.tenant == tenant)
+                .cloned()
+                .collect();
             v.sort_by(|a, b| a.body["id"].as_str().cmp(&b.body["id"].as_str()));
             let total = v.len();
             (v, total)
         }
         fn insert(&mut self, tenant: &str, id: &str, body: Value) -> StoredUser {
-            let su = StoredUser { tenant: tenant.into(), version: 1, body };
+            let su = StoredUser {
+                tenant: tenant.into(),
+                version: 1,
+                body,
+            };
             self.rows.insert((tenant.into(), id.into()), su.clone());
             su
         }
         fn replace(&mut self, tenant: &str, id: &str, body: Value) -> Option<StoredUser> {
             let key = (tenant.to_string(), id.to_string());
             let prev = self.rows.get(&key)?;
-            let su = StoredUser { tenant: tenant.into(), version: prev.version + 1, body };
+            let su = StoredUser {
+                tenant: tenant.into(),
+                version: prev.version + 1,
+                body,
+            };
             self.rows.insert(key, su.clone());
             Some(su)
         }
         fn delete(&mut self, tenant: &str, id: &str) -> bool {
-            self.rows.remove(&(tenant.to_string(), id.to_string())).is_some()
+            self.rows
+                .remove(&(tenant.to_string(), id.to_string()))
+                .is_some()
         }
     }
 
     fn ctx() -> TenantCtx {
-        TenantCtx { tenant_id: "t1".into(), scopes: vec!["scim".into()] }
+        TenantCtx {
+            tenant_id: "t1".into(),
+            scopes: vec!["scim".into()],
+        }
     }
     fn svc(store: &mut MemStore) -> UserService<'_, MemStore> {
-        UserService { store, new_id: &|| "id-1".to_string(), now: &|| "2026-06-24T00:00:00Z".to_string() }
+        UserService {
+            store,
+            new_id: &|| "id-1".to_string(),
+            now: &|| "2026-06-24T00:00:00Z".to_string(),
+        }
     }
 
     #[test]
     fn create_returns_201_and_server_id() {
         let mut s = MemStore::default();
-        let (status, body, tag) =
-            svc(&mut s).create(&ctx(), json!({ "userName": "a", "id": "client-tried" })).unwrap();
+        let (status, body, tag) = svc(&mut s)
+            .create(&ctx(), json!({ "userName": "a", "id": "client-tried" }))
+            .unwrap();
         assert_eq!(status, 201);
-        assert_eq!(body["id"], "id-1");        // server-assigned, client value ignored
+        assert_eq!(body["id"], "id-1"); // server-assigned, client value ignored
         assert!(tag.unwrap().starts_with("W/\""));
     }
 
     #[test]
     fn duplicate_username_is_409() {
         let mut s = MemStore::default();
-        svc(&mut s).create(&ctx(), json!({ "userName": "a" })).unwrap();
-        let err = svc(&mut s).create(&ctx(), json!({ "userName": "a" })).unwrap_err();
+        svc(&mut s)
+            .create(&ctx(), json!({ "userName": "a" }))
+            .unwrap();
+        let err = svc(&mut s)
+            .create(&ctx(), json!({ "userName": "a" }))
+            .unwrap_err();
         assert_eq!(err.status, 409);
         assert_eq!(err.scim_type, Some(ScimErrorType::Uniqueness));
     }
@@ -248,13 +287,18 @@ mod tests {
     #[test]
     fn soft_delete_via_patch_keeps_user_gettable() {
         let mut s = MemStore::default();
-        svc(&mut s).create(&ctx(), json!({ "userName": "a" })).unwrap();
+        svc(&mut s)
+            .create(&ctx(), json!({ "userName": "a" }))
+            .unwrap();
         // Entra capitalized + string active.
-        let (status, body, _) = svc(&mut s).patch(
-            &ctx(), "id-1",
-            json!({ "Operations": [{ "op": "Replace", "value": { "active": "False" } }] }),
-            None,
-        ).unwrap();
+        let (status, body, _) = svc(&mut s)
+            .patch(
+                &ctx(),
+                "id-1",
+                json!({ "Operations": [{ "op": "Replace", "value": { "active": "False" } }] }),
+                None,
+            )
+            .unwrap();
         assert_eq!(status, 200);
         assert_eq!(body["active"], json!(false));
         // Still GET-able (soft delete).
@@ -266,21 +310,37 @@ mod tests {
     #[test]
     fn put_replace_then_if_match_mismatch_is_412() {
         let mut s = MemStore::default();
-        let (_, _, tag) = svc(&mut s).create(&ctx(), json!({ "userName": "a" })).unwrap();
+        let (_, _, tag) = svc(&mut s)
+            .create(&ctx(), json!({ "userName": "a" }))
+            .unwrap();
         let good = tag.unwrap();
         // First PUT with correct ETag succeeds and bumps version.
-        svc(&mut s).replace(&ctx(), "id-1", json!({ "userName": "a", "displayName": "X" }), Some(&good)).unwrap();
+        svc(&mut s)
+            .replace(
+                &ctx(),
+                "id-1",
+                json!({ "userName": "a", "displayName": "X" }),
+                Some(&good),
+            )
+            .unwrap();
         // Stale ETag now fails.
-        let err = svc(&mut s).replace(
-            &ctx(), "id-1", json!({ "userName": "a", "displayName": "Y" }), Some(&good),
-        ).unwrap_err();
+        let err = svc(&mut s)
+            .replace(
+                &ctx(),
+                "id-1",
+                json!({ "userName": "a", "displayName": "Y" }),
+                Some(&good),
+            )
+            .unwrap_err();
         assert_eq!(err.status, 412);
     }
 
     #[test]
     fn hard_delete_removes_and_then_404() {
         let mut s = MemStore::default();
-        svc(&mut s).create(&ctx(), json!({ "userName": "a" })).unwrap();
+        svc(&mut s)
+            .create(&ctx(), json!({ "userName": "a" }))
+            .unwrap();
         let (status, _, _) = svc(&mut s).delete(&ctx(), "id-1").unwrap();
         assert_eq!(status, 204);
         assert_eq!(svc(&mut s).get(&ctx(), "id-1").unwrap_err().status, 404);
@@ -289,7 +349,10 @@ mod tests {
     #[test]
     fn list_of_empty_is_200_empty_listresponse() {
         let s = &mut MemStore::default();
-        let page = Page { start_index: 1, count: 100 };
+        let page = Page {
+            start_index: 1,
+            count: 100,
+        };
         let (status, body, _) = svc(s).list(&ctx(), &page);
         assert_eq!(status, 200);
         assert_eq!(body["totalResults"], json!(0));
@@ -299,13 +362,15 @@ mod tests {
     #[test]
     fn patch_cannot_set_server_owned_id() {
         let mut s = MemStore::default();
-        svc(&mut s).create(&ctx(), json!({ "userName": "a" })).unwrap();
+        svc(&mut s)
+            .create(&ctx(), json!({ "userName": "a" }))
+            .unwrap();
         let (_, body, _) = svc(&mut s).patch(
             &ctx(), "id-1",
             json!({ "Operations": [{ "op": "replace", "value": { "id": "hijack", "displayName": "ok" } }] }),
             None,
         ).unwrap();
-        assert_eq!(body["id"], "id-1");          // id unchanged
-        assert_eq!(body["displayName"], "ok");   // legit field applied
+        assert_eq!(body["id"], "id-1"); // id unchanged
+        assert_eq!(body["displayName"], "ok"); // legit field applied
     }
 }

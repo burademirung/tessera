@@ -40,7 +40,11 @@ pub struct ScimError {
 
 impl ScimError {
     pub fn new(status: u16, scim_type: Option<ScimErrorType>, detail: impl Into<String>) -> Self {
-        Self { status, scim_type, detail: detail.into() }
+        Self {
+            status,
+            scim_type,
+            detail: detail.into(),
+        }
     }
     pub fn bad_request(t: ScimErrorType, detail: impl Into<String>) -> Self {
         Self::new(400, Some(t), detail)
@@ -81,7 +85,10 @@ mod tests {
         let v = e.to_json();
         assert_eq!(v["status"], serde_json::Value::String("409".to_string()));
         assert_eq!(v["scimType"], "uniqueness");
-        assert_eq!(v["schemas"][0], "urn:ietf:params:scim:api:messages:2.0:Error");
+        assert_eq!(
+            v["schemas"][0],
+            "urn:ietf:params:scim:api:messages:2.0:Error"
+        );
     }
 
     #[test]

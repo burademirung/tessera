@@ -10,7 +10,9 @@ crate-type = ["cdylib", "rlib"]
 
 [dependencies]
 worker = { version = "0.8", features = ["http", "d1", "queue"] }
-worker-macros = "0.8"
+# NOTE: the `event`/`durable_object` proc-macros are re-exported by `worker`
+# (`pub use worker_macros::{...}`) and reached via `use worker::*;`, so a direct
+# `worker-macros` dependency is not needed.
 web-sys = { version = "0.3", features = ["WorkerGlobalScope", "Crypto", "SubtleCrypto", "CryptoKey", "CryptoKeyPair"] }
 wasm-bindgen = "0.2"
 wasm-bindgen-futures = "0.4"
@@ -22,9 +24,9 @@ jsonwebtoken = { version = "10.4", default-features = false, features = ["use_pe
 ed25519-dalek = { version = "2.2", default-features = false, features = ["rand_core", "pkcs8", "pem", "zeroize"] }
 # NOTE: RS256 *verification* is provided by jsonwebtoken's `rust_crypto` backend
 # (DecodingKey::from_rsa_pem); RS256 *signing* is done via WebCrypto (Task 5).
-pasetors = { version = "0.7", default-features = false, features = ["std", "v4", "paserk"] }
-oauth2 = { version = "5.0", default-features = false }
-openidconnect = { version = "4.0", default-features = false }
+# The OIDC RP flow (PKCE-S256/state/nonce) is hand-rolled in `rp.rs` over sha2 +
+# base64url, so `oauth2`/`openidconnect`/`pasetors` are not referenced and were
+# dropped (they also transitively re-introduced `rsa` via openidconnect).
 sha2 = "0.10"
 base64ct = { version = "1", features = ["alloc"] }
 serde = { version = "1", features = ["derive"] }
@@ -37,6 +39,15 @@ subtle = { version = "2.6", default-features = false }
 # conformance harness proved the arc/regex/semver-only set diverged from OPA on it.
 # No time/rand/http/net (determinism: current time + posture arrive via `input`).
 regorus = { version = "0.10", default-features = false, features = ["arc", "regex", "semver", "graph"] }
+
+# getrandom 0.2 is pulled in transitively (jsonwebtoken's p256/p384 ECDSA and
+# ed25519-dalek's rand_core). On wasm*-unknown-unknown it needs its `js` feature
+# enabled or it `compile_error!`s. This was previously enabled implicitly by
+# oauth2/openidconnect; now that those are gone we enable it explicitly here
+# (wasm-only). Our *own* RNG uses getrandom 0.3 + the `getrandom_backend="wasm_js"`
+# cfg in .cargo/config.toml; this entry only feature-gates the 0.2 transitive.
+[target.wasm32-unknown-unknown.dependencies]
+getrandom_02 = { package = "getrandom", version = "0.2", features = ["js"] }
 
 [dev-dependencies]
 serde = { version = "1", features = ["derive"] }
