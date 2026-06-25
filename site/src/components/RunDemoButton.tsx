@@ -1,10 +1,12 @@
 import { useState } from 'react';
+import { runClientDemo } from '../lib/run-client-demo';
 
 /**
- * Primary-accent CTA that triggers the edge demo flow via the Task-7
- * `/api/telemetry/demo` route, which emits a real cascade of TelemetryEvents
- * (Queue → DO → SSE). Keyboard-accessible; errors surface in an aria-live status,
- * never as a thrown exception.
+ * Primary-accent CTA that runs a real identity-flow cascade through the live
+ * 3D graph. The cascade is driven client-side (`runClientDemo` feeds the
+ * telemetry store directly), so the demo works with no backend. When the edge
+ * engine is wired, it also best-effort triggers real server telemetry.
+ * Keyboard-accessible; any error surfaces in an aria-live status, never thrown.
  */
 export function RunDemoButton({
   endpoint = '/api/telemetry/demo',
@@ -15,9 +17,11 @@ export function RunDemoButton({
   async function run() {
     setBusy(true);
     setError(null);
+    // Best-effort: also drive real server telemetry if the edge is deployed.
+    // Failure here is expected when running the site standalone — never surfaced.
+    void fetch(endpoint, { method: 'POST' }).catch(() => {});
     try {
-      const res = await fetch(endpoint, { method: 'POST' });
-      if (!res.ok && res.status !== 202) throw new Error(`status ${res.status}`);
+      await runClientDemo();
     } catch {
       setError('Could not start the demo. Please try again.');
     } finally {
