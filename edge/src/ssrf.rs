@@ -43,38 +43,103 @@ fn host_of(url: &str) -> Result<String, String> {
     Ok(host.to_lowercase())
 }
 
+/// Parse 4 IPv4 octets from a dotted string. Returns None unless it is exactly
+/// four decimal octets in 0..=255.
+fn parse_ipv4(s: &str) -> Option<[u8; 4]> {
+    let parts: Vec<&str> = s.split('.').collect();
+    if parts.len() != 4 {
+        return None;
+    }
+    let mut out = [0u8; 4];
+    for (i, p) in parts.iter().enumerate() {
+        // Reject empty / non-digit / out-of-range octets.
+        if p.is_empty() || !p.bytes().all(|b| b.is_ascii_digit()) {
+            return None;
+        }
+        out[i] = p.parse::<u8>().ok()?;
+    }
+    Some(out)
+}
+
+/// True if an IPv4 literal is private/loopback/link-local/metadata/unspecified.
+fn ipv4_is_blocked(o: &[u8; 4]) -> bool {
+    let [a, b, _, _] = *o;
+    a == 127            // loopback 127/8
+        || a == 10          // 10/8
+        || (a == 192 && b == 168) // 192.168/16
+        || (a == 172 && (16..=31).contains(&b)) // 172.16/12
+        || (a == 169 && b == 254) // link-local + metadata
+        || a == 0           // 0.0.0.0/8 (incl. unspecified)
+}
+
 fn is_blocked_literal(host: &str) -> bool {
     // Metadata + obvious literals (string-level; defense-in-depth, every hop).
-    if host == "169.254.169.254" || host == "metadata.google.internal" || host == "::1" {
+    if host == "metadata.google.internal" {
         return true;
     }
     if host == "localhost" || host.ends_with(".localhost") {
         return true;
     }
     // IPv4 private/loopback/link-local ranges.
-    let octets: Vec<u8> = host.split('.').filter_map(|o| o.parse::<u8>().ok()).collect();
-    if octets.len() == 4 {
-        let [a, b, _, _] = [octets[0], octets[1], octets[2], octets[3]];
-        if a == 127 {
-            return true; // loopback
+    if let Some(o) = parse_ipv4(host) {
+        if ipv4_is_blocked(&o) {
+            return true;
         }
-        if a == 10 {
-            return true; // 10/8
+    }
+    // IPv6 literals (brackets already stripped by host_of). Normalize lowercase.
+    if host.contains(':') {
+        return ipv6_is_blocked(host);
+    }
+    false
+}
+
+/// Block dangerous IPv6 literals: loopback `::1`, unspecified `::`, ULA `fc00::/7`
+/// (fc/fd), link-local `fe80::/10`, and IPv4-mapped `::ffff:0:0/96` whose embedded
+/// v4 falls in the v4 blocklist. The host is the lowercased, bracket-stripped form.
+fn ipv6_is_blocked(host: &str) -> bool {
+    // Loopback and unspecified.
+    if host == "::1" || host == "::" || host == "0:0:0:0:0:0:0:1" || host == "0:0:0:0:0:0:0:0" {
+        return true;
+    }
+    // IPv4-mapped (::ffff:a.b.c.d or ::ffff:HHHH:HHHH): check the embedded v4.
+    if let Some(v4) = mapped_ipv4(host) {
+        if ipv4_is_blocked(&v4) {
+            return true;
         }
-        if a == 192 && b == 168 {
-            return true; // 192.168/16
+    }
+    // First hextet governs ULA / link-local ranges.
+    let first = host.split("::").next().unwrap_or(host);
+    let first = first.split(':').next().unwrap_or("");
+    if let Ok(h) = u16::from_str_radix(first, 16) {
+        let high = (h >> 8) as u8;
+        // ULA fc00::/7  -> high byte 0xfc or 0xfd
+        if high == 0xfc || high == 0xfd {
+            return true;
         }
-        if a == 172 && (16..=31).contains(&b) {
-            return true; // 172.16/12
-        }
-        if a == 169 && b == 254 {
-            return true; // link-local / metadata
-        }
-        if a == 0 {
+        // link-local fe80::/10 -> 0xfe80..=0xfebf
+        if (0xfe80..=0xfebf).contains(&h) {
             return true;
         }
     }
     false
+}
+
+/// Extract the embedded IPv4 from an IPv4-mapped IPv6 literal `::ffff:a.b.c.d`
+/// (dotted form) or `::ffff:wwww:xxxx` (hex form). Returns None otherwise.
+fn mapped_ipv4(host: &str) -> Option<[u8; 4]> {
+    let rest = host.strip_prefix("::ffff:")?;
+    // Dotted form: ::ffff:169.254.169.254
+    if let Some(v4) = parse_ipv4(rest) {
+        return Some(v4);
+    }
+    // Hex form: ::ffff:a9fe:a9fe -> two hextets => 4 bytes.
+    let groups: Vec<&str> = rest.split(':').collect();
+    if groups.len() == 2 {
+        let hi = u16::from_str_radix(groups[0], 16).ok()?;
+        let lo = u16::from_str_radix(groups[1], 16).ok()?;
+        return Some([(hi >> 8) as u8, (hi & 0xff) as u8, (lo >> 8) as u8, (lo & 0xff) as u8]);
+    }
+    None
 }
 
 /// Gate an outbound URL before any fetch: HTTPS only, host must be a configured
@@ -137,6 +202,27 @@ mod tests {
         for h in ["https://10.0.0.5/jwks", "https://192.168.1.1/jwks", "https://172.16.0.1/jwks", "https://127.0.0.1/jwks", "https://[::1]/jwks", "https://169.254.0.1/jwks"] {
             assert!(check_outbound_url(&allow(), h).is_err(), "should block {h}");
         }
+    }
+
+    #[test]
+    fn blocks_ipv6_ula_linklocal_mapped_and_unspecified() {
+        // ULA fc00::/7 (fcxx + fdxx), link-local fe80::/10, unspecified, mapped v4.
+        for h in [
+            "https://[fc00::1]/jwks",
+            "https://[fd12:3456::1]/jwks",
+            "https://[fe80::1]/jwks",
+            "https://[febf::1]/jwks",
+            "https://[::]/jwks",
+            "https://[::1]/jwks",
+            // IPv4-mapped metadata + RFC1918, dotted and hex forms.
+            "https://[::ffff:169.254.169.254]/jwks",
+            "https://[::ffff:10.0.0.1]/jwks",
+            "https://[::ffff:a9fe:a9fe]/jwks", // 169.254.169.254 in hex
+        ] {
+            assert!(check_outbound_url(&allow(), h).is_err(), "should block {h}");
+        }
+        // 0.0.0.0 unspecified IPv4.
+        assert!(check_outbound_url(&allow(), "https://0.0.0.0/jwks").is_err());
     }
 
     #[test]

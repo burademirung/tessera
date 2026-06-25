@@ -13,7 +13,7 @@ mod bundle;
 pub use bundle::SignedBundle;
 
 mod decision_log;
-pub use decision_log::{build_decision_event, DecisionEvent};
+pub use decision_log::{build_decision_event, decision_response, DecisionEvent};
 
 #[cfg(test)]
 mod conformance;

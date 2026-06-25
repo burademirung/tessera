@@ -2,7 +2,21 @@
 //! builds an OPA-shaped event and applies masking BEFORE the log leaves the Worker.
 
 use super::engine::ALLOW_QUERY;
+use super::seam::AuthzDecision;
 use serde::Serialize;
+
+/// Shape the `/decision` PEP HTTP response from a policy decision. The endpoint
+/// fails CLOSED: any Deny (including engine error/undefined) becomes
+/// `{"allow": false, "reason": ...}`; only an explicit Allow is `{"allow": true}`.
+/// Pure + host-testable.
+pub fn decision_response(decision: &AuthzDecision) -> serde_json::Value {
+    match decision {
+        AuthzDecision::Allow => serde_json::json!({ "allow": true }),
+        AuthzDecision::Deny { reason } => {
+            serde_json::json!({ "allow": false, "reason": reason })
+        }
+    }
+}
 
 #[derive(Serialize)]
 pub struct DecisionEvent {
@@ -82,6 +96,17 @@ mod tests {
         assert!(json.contains("\"result\":true"));
         assert!(json.contains("\"revision\":\"2026-06-24.1\""));
         assert!(json.contains("\"timestamp\":\"2026-06-24T00:00:00.000Z\""));
+    }
+
+    #[test]
+    fn decision_response_maps_allow_and_deny_fail_closed() {
+        let allow = decision_response(&AuthzDecision::Allow);
+        assert_eq!(allow["allow"], true);
+        assert!(allow.get("reason").is_none());
+
+        let deny = decision_response(&AuthzDecision::Deny { reason: "policy denied".into() });
+        assert_eq!(deny["allow"], false);
+        assert_eq!(deny["reason"], "policy denied");
     }
 
     #[test]

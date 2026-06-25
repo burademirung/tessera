@@ -1,4 +1,13 @@
 {
+  // Required Worker SECRETS (set via `wrangler secret put <NAME>`; never committed):
+  //   INTERNAL_ED25519_SEED   — 32-byte hex Ed25519 seed (internal signer)
+  //   CLOUD_RSA_PKCS8_DER_B64 — base64url PKCS8 DER RSA key (cloud RS256 signer)
+  //   SCIM_BEARER_TOKEN       — SCIM bearer secret    SCIM_TENANT_ID — SCIM tenant
+  //   FEDERATION_API_TOKEN    — C1: bearer for /federate (Go control-plane only)
+  //   INTROSPECT_BEARER_TOKEN — I5: RFC 7662 caller bearer for /introspect
+  //   AUTHZ_BUNDLE / AUTHZ_BUNDLE_SIG / AUTHZ_BUNDLE_PUBKEY — signed policy bundle,
+  //                              detached Ed25519 sig (b64url), 32-byte hex pubkey
+  // Every endpoint FAILS CLOSED if its secret is absent (mints/decides nothing).
   "name": "lifecycle-edge",
   "main": "build/worker/shim.mjs",
   "compatibility_date": "2026-06-01",
