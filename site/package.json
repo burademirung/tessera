@@ -15,6 +15,7 @@
     "e2e": "playwright test"
   },
   "dependencies": {
+    "@astrojs/mdx": "^7.0.0",
     "@astrojs/react": "^6.0.0",
     "@pmndrs/detect-gpu": "^6.0.10",
     "@react-three/drei": "^10.7.7",
@@ -28,6 +29,7 @@
     "zustand": "^5.0.14"
   },
   "devDependencies": {
+    "@axe-core/playwright": "^4.12.1",
     "@playwright/test": "^1.61.1",
     "@testing-library/jest-dom": "^6.9.1",
     "@testing-library/react": "^16.3.2",
