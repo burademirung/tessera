@@ -1,0 +1,163 @@
+name: pr-validate
+on:
+  pull_request:
+permissions:
+  contents: read
+concurrency:
+  group: pr-validate-${{ github.event.number }}
+  cancel-in-progress: true   # validation may be cancelled (no apply here)
+jobs:
+  site:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: ./.github/actions/harden-setup
+        with:
+          egress-policy: audit
+          toolchain: node
+      - run: pnpm --dir site install --frozen-lockfile
+      - run: pnpm --dir site build
+      - run: pnpm --dir site test
+
+  rust-edge:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: ./.github/actions/harden-setup
+        with:
+          egress-policy: audit
+          toolchain: rust
+          working-directory: edge
+      - name: Install cargo-audit
+        run: cargo install cargo-audit --locked
+      - name: cargo build (wasm)
+        working-directory: edge
+        run: cargo build --release --target wasm32-unknown-unknown
+      - name: cargo test
+        working-directory: edge
+        run: cargo test
+      - name: cargo audit (RustSec)
+        working-directory: edge
+        run: cargo audit --deny warnings
+
+  go-control-plane:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: ./.github/actions/harden-setup
+        with:
+          egress-policy: audit
+          toolchain: go
+          working-directory: control-plane
+      - name: go build
+        working-directory: control-plane
+        run: go build ./...
+      - name: go test
+        working-directory: control-plane
+        run: go test ./...
+      - name: govulncheck
+        working-directory: control-plane
+        run: |
+          go install golang.org/x/vuln/cmd/govulncheck@latest
+          govulncheck ./...
+
+  iac-plan:
+    runs-on: ubuntu-latest
+    environment: pr-${{ github.event.number }}
+    permissions:
+      id-token: write   # OIDC for read-only plan
+      contents: read
+      pull-requests: write
+    env:
+      PR_NUMBER: ${{ github.event.number }}
+    steps:
+      - uses: ./.github/actions/harden-setup
+        with:
+          egress-policy: audit
+          toolchain: terraform
+      - name: AWS OIDC (read-only plan)
+        uses: aws-actions/configure-aws-credentials@e3dd6a429d7300a6a4c196c26e071d42e0343502 # v4.0.2
+        with:
+          role-to-assume: ${{ secrets.AWS_ROLE_ARN }}
+          aws-region: ${{ vars.AWS_REGION }}
+          audience: sts.amazonaws.com
+      - name: GCP OIDC (direct WIF)
+        uses: google-github-actions/auth@71f986410dfbc7added4569d411d040a91dc6935 # v2.1.8
+        with:
+          workload_identity_provider: ${{ secrets.GCP_WIF_PROVIDER }}
+      - name: Azure OIDC (FIC)
+        uses: azure/login@a65d910e8af852a8061c627c456678983e180302 # v2.2.0
+        with:
+          client-id: ${{ secrets.AZURE_CLIENT_ID }}
+          tenant-id: ${{ secrets.AZURE_TENANT_ID }}
+          subscription-id: ${{ secrets.AZURE_SUBSCRIPTION_ID }}
+      - name: Terraform fmt/validate
+        working-directory: terraform
+        run: |
+          terraform fmt -check -recursive
+          terraform init -input=false
+          terraform validate
+      - name: Terraform plan (JSON for conftest)
+        working-directory: terraform
+        run: |
+          # PR_NUMBER comes from the job-level env: (shell-expanded here, NOT in an
+          # env: block — env: values are parsed by Actions, never run through a shell).
+          terraform plan -input=false -out=tfplan -var="environment=pr-${PR_NUMBER}"
+          terraform show -json tfplan > plan.json
+      - name: conftest on plan JSON
+        working-directory: terraform
+        run: |
+          curl -sSfL https://github.com/open-policy-agent/conftest/releases/download/v0.56.0/conftest_0.56.0_Linux_x86_64.tar.gz | tar -xz conftest
+          ./conftest test plan.json --policy policy
+      - name: trivy config (IaC misconfig)
+        uses: aquasecurity/trivy-action@18f2510ee396bbf400402947b394f2dd8c87dbb0 # 0.29.0
+        with:
+          scan-type: config
+          scan-ref: terraform
+          trivy-config: trivy.yaml
+
+  cdk-nag:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: ./.github/actions/harden-setup
+        with:
+          egress-policy: audit
+          toolchain: node
+      - run: npm --prefix cdk ci
+      - name: cdk synth (cdk-nag runs at synth; errors fail build)
+        run: npm --prefix cdk run synth
+      - name: cdk test (Jest snapshot + assertions)
+        run: npm --prefix cdk test
+
+  sbom-scan:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: ./.github/actions/harden-setup
+        with:
+          egress-policy: audit
+      - name: Generate CycloneDX SBOM
+        uses: anchore/sbom-action@df80a981bc6edbc4e220a492d3cbe9f5547a6e75 # v0.17.9
+        with:
+          path: .
+          format: cyclonedx-json
+          output-file: sbom.cdx.json
+      - name: Generate SPDX SBOM
+        uses: anchore/sbom-action@df80a981bc6edbc4e220a492d3cbe9f5547a6e75 # v0.17.9
+        with:
+          path: .
+          format: spdx-json
+          output-file: sbom.spdx.json
+      - name: Grype scan (gate High/Critical)
+        uses: anchore/scan-action@abae793926ec39a78ab18002bc7fc45bbbd94342 # v6.0.0
+        with:
+          sbom: sbom.cdx.json
+          fail-build: true
+          severity-cutoff: high
+
+  gitleaks:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: ./.github/actions/harden-setup
+        with:
+          egress-policy: audit
+          fetch-depth: '0'
+      - uses: gitleaks/gitleaks-action@ff98106e4c7b2bc287b24eaf42907196329070c7 # v2.3.9
+        env:
+          GITLEAKS_CONFIG: .gitleaks.toml
