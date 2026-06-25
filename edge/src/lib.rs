@@ -8,6 +8,7 @@ pub mod introspect;
 pub mod jwks;
 pub mod jwt;
 pub mod rp;
+pub mod scim;
 pub mod session;
 pub mod ssrf;
 pub mod util;

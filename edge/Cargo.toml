@@ -5,6 +5,7 @@ edition = "2021"
 authors = ["Lifecycle"]
 
 [lib]
+name = "lifecycle_edge"
 crate-type = ["cdylib", "rlib"]
 
 [dependencies]
