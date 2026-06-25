@@ -1,0 +1,672 @@
+openapi: "3.1.0"
+
+info:
+  title: Tessera Edge Identity Engine API
+  version: "2026-06-24"
+  description: |
+    Bespoke identity engine (Rust/WASM Cloudflare Worker). Covers OIDC RP flow,
+    JWKS, token introspection, authz PEP, cloud federation token mint, and the
+    live-telemetry SSE surface. SCIM 2.0 endpoints are not included here because
+    SCIM uses its own error envelope (RFC 7644) and content-type
+    (`application/scim+json`); see docs/API.md §9 for the full SCIM reference.
+
+servers:
+  - url: https://idp.lifecycle.example
+    description: Production edge worker
+
+security: []   # Each operation declares its own requirement
+
+components:
+  securitySchemes:
+    BearerFederate:
+      type: http
+      scheme: bearer
+      description: "FEDERATION_API_TOKEN Cloudflare Secret — required for POST /federate"
+    BearerIntrospect:
+      type: http
+      scheme: bearer
+      description: "INTROSPECT_BEARER_TOKEN Cloudflare Secret — required for POST /introspect"
+
+  schemas:
+
+    # ── Discovery ────────────────────────────────────────────────────────────
+    OidcConfiguration:
+      type: object
+      required:
+        - issuer
+        - jwks_uri
+        - authorization_endpoint
+        - token_endpoint
+        - introspection_endpoint
+        - response_types_supported
+        - grant_types_supported
+        - subject_types_supported
+        - id_token_signing_alg_values_supported
+        - token_endpoint_auth_methods_supported
+        - code_challenge_methods_supported
+        - scopes_supported
+        - claims_supported
+      properties:
+        issuer:
+          type: string
+          example: "https://idp.lifecycle.example"
+        jwks_uri:
+          type: string
+          example: "https://idp.lifecycle.example/jwks"
+        authorization_endpoint:
+          type: string
+          example: "https://idp.lifecycle.example/authorize"
+        token_endpoint:
+          type: string
+          example: "https://idp.lifecycle.example/token"
+        introspection_endpoint:
+          type: string
+          example: "https://idp.lifecycle.example/introspect"
+        response_types_supported:
+          type: array
+          items:
+            type: string
+          example: ["code"]
+        grant_types_supported:
+          type: array
+          items:
+            type: string
+          example: ["authorization_code", "refresh_token"]
+        subject_types_supported:
+          type: array
+          items:
+            type: string
+          example: ["public"]
+        id_token_signing_alg_values_supported:
+          type: array
+          items:
+            type: string
+          example: ["EdDSA", "RS256"]
+        token_endpoint_auth_methods_supported:
+          type: array
+          items:
+            type: string
+          example: ["client_secret_basic", "private_key_jwt"]
+        code_challenge_methods_supported:
+          type: array
+          items:
+            type: string
+          example: ["S256"]
+        scopes_supported:
+          type: array
+          items:
+            type: string
+          example: ["openid", "profile", "email"]
+        claims_supported:
+          type: array
+          items:
+            type: string
+          example: ["sub", "iss", "aud", "exp", "iat", "nbf"]
+
+    # ── JWKS ─────────────────────────────────────────────────────────────────
+    Jwks:
+      type: object
+      required: [keys]
+      properties:
+        keys:
+          type: array
+          items:
+            $ref: "#/components/schemas/Jwk"
+
+    Jwk:
+      type: object
+      required: [kty, kid, use]
+      properties:
+        kty:
+          type: string
+          enum: [OKP, RSA]
+        kid:
+          type: string
+          example: "int-2026-06"
+        use:
+          type: string
+          enum: [sig]
+        alg:
+          type: string
+          example: "RS256"
+        crv:
+          type: string
+          description: "OKP curve — present only when kty=OKP"
+          example: "Ed25519"
+        x:
+          type: string
+          description: "Base64url public key (OKP)"
+        n:
+          type: string
+          description: "RSA modulus (base64url)"
+        e:
+          type: string
+          description: "RSA exponent (base64url)"
+          example: "AQAB"
+
+    # ── Introspection ─────────────────────────────────────────────────────────
+    IntrospectionRequest:
+      type: object
+      required: [token]
+      properties:
+        token:
+          type: string
+          description: "Opaque session token to introspect"
+
+    IntrospectionResponse:
+      type: object
+      required: [active]
+      properties:
+        active:
+          type: boolean
+        sub:
+          type: string
+          description: "Subject identifier — omitted when active=false"
+          example: "rp:a1b2c3d4"
+        exp:
+          type: integer
+          format: int64
+          description: "Expiry epoch seconds — omitted when active=false"
+        token_type:
+          type: string
+          example: "session"
+
+    # ── Authorization PEP ─────────────────────────────────────────────────────
+    AuthzSubject:
+      type: object
+      required: [id, tenant]
+      properties:
+        id:
+          type: string
+          example: "user-123"
+        roles:
+          type: array
+          items:
+            type: string
+          example: ["reader"]
+        tenant:
+          type: string
+          example: "acme"
+        mfa:
+          type: boolean
+          example: true
+        device_trust:
+          type: string
+          enum: [managed, unmanaged, unknown]
+          example: "managed"
+
+    AuthzResource:
+      type: object
+      required: [type, tenant]
+      properties:
+        type:
+          type: string
+          example: "users"
+        tenant:
+          type: string
+          example: "acme"
+
+    AuthzEnvironment:
+      type: object
+      properties:
+        maintenance_window:
+          type: boolean
+          example: false
+
+    AuthzInput:
+      type: object
+      required: [subject, resource, action, environment]
+      properties:
+        subject:
+          $ref: "#/components/schemas/AuthzSubject"
+        resource:
+          $ref: "#/components/schemas/AuthzResource"
+        action:
+          type: string
+          example: "read"
+        environment:
+          $ref: "#/components/schemas/AuthzEnvironment"
+
+    DecisionResponse:
+      type: object
+      required: [allow]
+      properties:
+        allow:
+          type: boolean
+          description: |
+            The authoritative access signal. Callers MUST NOT grant access unless
+            this field is explicitly `true`. The HTTP status is always 200;
+            check this field, not the status code.
+        reason:
+          type:
+            - string
+            - "null"
+          description: "Human-readable denial reason; null when allow=true"
+          example: "policy denied"
+
+    # ── Federation ────────────────────────────────────────────────────────────
+    FederateRequest:
+      type: object
+      required: [cloud, sub]
+      properties:
+        cloud:
+          type: string
+          enum: [aws, azure, gcp]
+          description: "Case-insensitive cloud identifier"
+        sub:
+          type: string
+          maxLength: 127
+          description: "Subject claim for the federated token"
+          example: "arn:aws:iam::123456789012:role/lifecycle-worker"
+
+    FederateResponse:
+      type: object
+      required: [token]
+      properties:
+        token:
+          type: string
+          description: "RS256-signed JWT (kid=cloud-2026-06, TTL=900s)"
+
+    # ── Telemetry ─────────────────────────────────────────────────────────────
+    TelemetryEvent:
+      type: object
+      required: [v, id, ts, node, phase, label]
+      properties:
+        v:
+          type: integer
+          const: 1
+          description: "Schema version — always 1"
+        id:
+          type: string
+          description: "Monotonic event ID (used as SSE id: frame)"
+          example: "42"
+        ts:
+          type: integer
+          format: int64
+          description: "Epoch milliseconds"
+          example: 1750000001000
+        node:
+          type: string
+          enum: [idp, edge, opa, control, aws, azure, gcp]
+          description: "Identity graph node that emitted this event"
+        edge:
+          type:
+            - string
+            - "null"
+          enum:
+            - idp-edge
+            - edge-opa
+            - edge-control
+            - edge-aws
+            - edge-azure
+            - edge-gcp
+            - null
+          description: "Graph edge traversed; null for node-local events"
+        phase:
+          type: string
+          enum: [request, authn, authz, lifecycle, federation, complete, error]
+          description: "Identity lifecycle phase"
+        label:
+          type: string
+          minLength: 1
+          description: "Human-readable event description"
+          example: "OIDC code exchange"
+
+    DemoTriggerResponse:
+      type: object
+      required: [ok]
+      properties:
+        ok:
+          type: boolean
+        error:
+          type: string
+          description: "Present only when ok=false"
+
+    # ── Errors ────────────────────────────────────────────────────────────────
+    ErrorResponse:
+      type: object
+      properties:
+        error:
+          type: string
+
+paths:
+
+  # ── Discovery ────────────────────────────────────────────────────────────────
+  /.well-known/openid-configuration:
+    get:
+      operationId: getOidcConfiguration
+      summary: OpenID Connect discovery document
+      description: |
+        RFC 8414 provider metadata. All endpoint URLs derive from the issuer
+        `https://idp.lifecycle.example`. Cached for 300 seconds.
+      security: []
+      responses:
+        "200":
+          description: Provider metadata
+          headers:
+            Cache-Control:
+              schema:
+                type: string
+                example: "public, max-age=300"
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/OidcConfiguration"
+
+  # ── JWKS ─────────────────────────────────────────────────────────────────────
+  /jwks:
+    get:
+      operationId: getJwks
+      summary: JSON Web Key Set
+      description: |
+        Public JWK Set for token signature verification. Contains the internal
+        EdDSA key (`kid: int-2026-06`) and, when available in KV, the cloud RSA
+        public key (`kid: cloud-2026-06`). Private members are never returned;
+        the worker validates this invariant before responding.
+      security: []
+      responses:
+        "200":
+          description: JWKS document
+          headers:
+            Cache-Control:
+              schema:
+                type: string
+                example: "public, max-age=300"
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Jwks"
+        "500":
+          description: JWKS invariant violation
+
+  # ── OIDC RP flow ─────────────────────────────────────────────────────────────
+  /authorize:
+    get:
+      operationId: authorize
+      summary: OIDC authorization redirect (RP-initiated)
+      description: |
+        Generates a CSPRNG `state`, `nonce`, and PKCE S256 verifier; stores them
+        in KV with a 300-second TTL; then redirects to the upstream IdP.
+        `code_challenge_method=S256` is always set explicitly.
+      security: []
+      responses:
+        "302":
+          description: Redirect to upstream IdP authorize endpoint
+          headers:
+            Location:
+              schema:
+                type: string
+                description: "Upstream IdP authorize URL with PKCE + state + nonce"
+
+  /callback:
+    get:
+      operationId: callback
+      summary: OIDC callback (authorization code)
+      description: |
+        Validates `state` (CSRF), performs RFC 9207 `iss` response parameter
+        check, verifies KV stash exists, then creates a session in the
+        `SessionStore` Durable Object. Sets `__Host-sid` session cookie.
+      security: []
+      parameters:
+        - name: code
+          in: query
+          required: true
+          schema:
+            type: string
+        - name: state
+          in: query
+          required: true
+          schema:
+            type: string
+        - name: iss
+          in: query
+          required: true
+          schema:
+            type: string
+          description: "RFC 9207 issuer parameter — must equal https://okta.example"
+      responses:
+        "200":
+          description: Session established
+          headers:
+            Set-Cookie:
+              schema:
+                type: string
+                example: "__Host-sid=<token>; Max-Age=3600; Path=/; HttpOnly; Secure; SameSite=Strict"
+        "400":
+          description: "Invalid callback (state mismatch, missing code, iss mismatch, or expired stash)"
+
+  /logout:
+    post:
+      operationId: logout
+      summary: Revoke session and clear cookie
+      description: |
+        Revokes the `__Host-sid` session in the `SessionStore` Durable Object and
+        returns a cookie-clearing `Set-Cookie` header. Idempotent — returns 200
+        even if no session was active.
+      security: []
+      responses:
+        "200":
+          description: Session revoked
+          headers:
+            Set-Cookie:
+              schema:
+                type: string
+                example: "__Host-sid=; Max-Age=0; Path=/; HttpOnly; Secure; SameSite=Strict"
+
+  # ── Introspection ────────────────────────────────────────────────────────────
+  /introspect:
+    post:
+      operationId: introspectToken
+      summary: RFC 7662 token introspection
+      description: |
+        Returns the activity status of a session token. The caller must present
+        `INTROSPECT_BEARER_TOKEN` verified constant-time. Inactive/expired/revoked
+        tokens return only `{"active": false}` — no `sub` or `exp` is disclosed.
+      security:
+        - BearerIntrospect: []
+      requestBody:
+        required: true
+        content:
+          application/x-www-form-urlencoded:
+            schema:
+              $ref: "#/components/schemas/IntrospectionRequest"
+      responses:
+        "200":
+          description: Introspection result (active or inactive)
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/IntrospectionResponse"
+              examples:
+                active:
+                  summary: Active session
+                  value:
+                    active: true
+                    sub: "rp:a1b2c3d4"
+                    exp: 1750000000
+                    token_type: "session"
+                inactive:
+                  summary: Inactive / expired / revoked
+                  value:
+                    active: false
+        "401":
+          description: Missing or wrong bearer token
+
+  # ── Authorization PEP ────────────────────────────────────────────────────────
+  /decision:
+    post:
+      operationId: authorizeDecision
+      summary: Authorization decision (RBAC-A + ABAC + SoD)
+      description: |
+        Policy Enforcement Point. Evaluates the four-category ABAC input against
+        the Ed25519-signed Rego policy bundle (`data.authz.allow`) via the embedded
+        Regorus engine. Always returns HTTP 200; callers MUST check `allow`.
+
+        Fail-closed: if the bundle is absent, fails signature verification, or
+        Regorus returns an error, `allow` is `false` and `reason` explains why.
+
+        The Rego ruleset enforces:
+        - Hierarchical RBAC (`graph.reachable` over role hierarchy)
+        - ABAC: tenant isolation (BOLA), MFA posture, device-trust rank, maintenance windows
+        - SoD: toxic role pairs + self-approval prevention
+      security: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/AuthzInput"
+            example:
+              subject:
+                id: "alice"
+                roles: ["reader"]
+                tenant: "acme"
+                mfa: true
+                device_trust: "managed"
+              resource:
+                type: "users"
+                tenant: "acme"
+              action: "read"
+              environment:
+                maintenance_window: false
+      responses:
+        "200":
+          description: Decision (always 200 — check allow field)
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/DecisionResponse"
+              examples:
+                allowed:
+                  summary: Access granted
+                  value:
+                    allow: true
+                    reason: null
+                denied:
+                  summary: Access denied by policy
+                  value:
+                    allow: false
+                    reason: "policy denied"
+                bundleMissing:
+                  summary: Bundle unavailable (fail-closed)
+                  value:
+                    allow: false
+                    reason: "policy unavailable: no bundle"
+
+  # ── Federation ───────────────────────────────────────────────────────────────
+  /federate:
+    post:
+      operationId: federateToken
+      summary: Mint cloud workload identity token (RS256)
+      description: |
+        Mints a short-lived RS256 JWT for AWS, Azure, or GCP workload identity
+        federation. Signed with `kid: cloud-2026-06` (CLOUD_RSA_PKCS8_DER_B64).
+
+        - TTL: 900 seconds (fixed)
+        - `aud`: cloud-specific (`sts.amazonaws.com` / `api://AzureADTokenExchange` / `https://iam.googleapis.com/`)
+        - `sub`: max 127 characters
+        - No `azp` field in the payload
+        - Caller authenticated constant-time via FEDERATION_API_TOKEN
+      security:
+        - BearerFederate: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/FederateRequest"
+            examples:
+              aws:
+                summary: AWS STS
+                value:
+                  cloud: "aws"
+                  sub: "arn:aws:iam::123456789012:role/lifecycle-worker"
+              azure:
+                summary: Azure AD
+                value:
+                  cloud: "azure"
+                  sub: "lifecycle-workload"
+              gcp:
+                summary: GCP WIF
+                value:
+                  cloud: "gcp"
+                  sub: "lifecycle-sa@my-project.iam.gserviceaccount.com"
+      responses:
+        "200":
+          description: Signed JWT
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/FederateResponse"
+        "400":
+          description: "Unknown cloud value or sub exceeds 127 characters"
+        "401":
+          description: "Missing, empty, or wrong FEDERATION_API_TOKEN"
+
+  # ── Telemetry SSE ─────────────────────────────────────────────────────────────
+  /api/telemetry/stream:
+    get:
+      operationId: telemetryStream
+      summary: Live identity-graph telemetry (Server-Sent Events)
+      description: |
+        Streams `TelemetryEvent` objects as Server-Sent Events. Events are
+        produced by the edge engine, enqueued onto `TELEMETRY_QUEUE`, aggregated
+        in the `TELEMETRY_DO` Durable Object ring buffer, and fanned out to all
+        connected subscribers.
+
+        Each SSE frame: `id: <id>\ndata: <json>\n\n`
+
+        Reconnection: the `Last-Event-ID` request header replays all buffered
+        events with id greater than the supplied value before streaming live.
+
+        The stream opens with a `retry: 3000` directive and emits periodic
+        `: keepalive` comments to prevent proxy timeouts.
+      security: []
+      parameters:
+        - name: Last-Event-ID
+          in: header
+          required: false
+          schema:
+            type: string
+          description: "Resume from this event ID (DO ring buffer replay)"
+      responses:
+        "200":
+          description: SSE stream
+          headers:
+            Content-Type:
+              schema:
+                type: string
+                example: "text/event-stream; charset=utf-8"
+            Cache-Control:
+              schema:
+                type: string
+                example: "no-cache, no-transform"
+
+  /api/telemetry/demo:
+    post:
+      operationId: triggerDemo
+      summary: Trigger demo telemetry sequence
+      description: |
+        Enqueues a scripted sequence of `TelemetryEvent` objects simulating a
+        complete JML lifecycle flow (hire → SCIM provision → OIDC authn →
+        authz → cloud federation → deprovision) to the `TELEMETRY_QUEUE`.
+        Returns 202 immediately; events appear in the SSE stream within ~1 second.
+      security: []
+      responses:
+        "202":
+          description: Demo sequence enqueued
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/DemoTriggerResponse"
+              example:
+                ok: true
+        "502":
+          description: Edge service binding unavailable
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/DemoTriggerResponse"
+              example:
+                ok: false
+                error: "upstream error"
