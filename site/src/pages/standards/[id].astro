@@ -15,13 +15,19 @@ const { entry } = Astro.props;
 const { Content } = await render(entry);
 ---
 <Base title={`${entry.data.name} — Tessera`} description={entry.data.tagline}>
-  <main>
-    <p style="margin:0;"><a href="/standards/" style="color:var(--color-accent);">← All technologies</a></p>
-    <h1 style="font-size:clamp(1.8rem,4vw,2.6rem); margin:var(--space-2) 0 var(--space-4);">
-      {entry.data.name}
-    </h1>
-    <TechnologySection data={entry.data}>
-      <Content />
-    </TechnologySection>
+  <main id="main" class="page">
+    <div class="wrap">
+      <p class="page__back"><a href="/standards/">← All technologies</a></p>
+      <p class="eyebrow">TECHNOLOGY</p>
+      <h1 class="page__h1">{entry.data.name}</h1>
+      <TechnologySection data={entry.data}>
+        <Content />
+      </TechnologySection>
+    </div>
   </main>
 </Base>
+<style>
+  .page { padding-block: clamp(48px, 8vw, 96px); }
+  .page__back { margin: 0 0 var(--space-3); font-family: var(--font-mono); font-size: 0.82rem; }
+  .page__h1 { font-size: clamp(1.9rem, 5vw, 2.8rem); margin: var(--space-1) 0 var(--space-4); }
+</style>

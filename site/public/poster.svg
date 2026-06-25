@@ -1,4 +1,32 @@
-<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 800 420" width="800" height="420">
-  <rect width="800" height="420" fill="#FAFAFB"/>
-  <text x="400" y="210" text-anchor="middle" font-family="system-ui" font-size="22" fill="#5A5A66">Identity flow graph</text>
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 800 420" width="800" height="420" role="img" aria-label="Identity flow graph (static)">
+  <rect width="800" height="420" fill="#F4F3EE"/>
+  <!-- grout tile grid -->
+  <g stroke="#E4E1D8" stroke-width="1" opacity="0.6">
+    <path d="M0 60H800M0 120H800M0 180H800M0 240H800M0 300H800M0 360H800"/>
+    <path d="M80 0V420M160 0V420M240 0V420M320 0V420M400 0V420M480 0V420M560 0V420M640 0V420M720 0V420"/>
+  </g>
+  <!-- edges: idp -> edge -> {policy, control, clouds}; the spine is lapis -->
+  <g fill="none">
+    <path d="M104 210 L304 210" stroke="#2740C8" stroke-width="3"/>
+    <path d="M304 210 L304 76 M304 210 L304 344 M304 210 L656 92 M304 210 L656 210 M304 210 L656 328" stroke="#E4E1D8" stroke-width="2"/>
+  </g>
+  <!-- nodes: gold markers -->
+  <g fill="#FBFAF7" stroke="#B0842B" stroke-width="2.5">
+    <circle cx="80"  cy="210" r="26"/>
+    <circle cx="304" cy="210" r="26"/>
+    <circle cx="304" cy="76"  r="22"/>
+    <circle cx="304" cy="344" r="22"/>
+    <circle cx="656" cy="92"  r="22"/>
+    <circle cx="656" cy="210" r="22"/>
+    <circle cx="656" cy="328" r="22"/>
+  </g>
+  <g font-family="system-ui, sans-serif" font-size="13" fill="#15171C" text-anchor="middle">
+    <text x="80"  y="262">Identity Provider</text>
+    <text x="304" y="262">Edge Engine</text>
+    <text x="304" y="44">Policy</text>
+    <text x="304" y="392">Control Plane</text>
+    <text x="656" y="60">AWS</text>
+    <text x="656" y="178">Azure</text>
+    <text x="656" y="378">GCP</text>
+  </g>
 </svg>

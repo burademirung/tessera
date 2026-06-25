@@ -1,19 +1,106 @@
 @import './tokens.css';
 
+/* Fonts — variable Fraunces/Inter + JetBrains Mono (self-hosted via @fontsource). */
+@import '@fontsource-variable/fraunces';
+@import '@fontsource-variable/inter';
+@import '@fontsource/jetbrains-mono/400.css';
+@import '@fontsource/jetbrains-mono/500.css';
+
 *, *::before, *::after { box-sizing: border-box; }
-html { color-scheme: light; }
+html { color-scheme: light; scroll-behavior: smooth; }
+
 body {
   margin: 0;
-  background: var(--color-bg);
-  color: var(--color-text);
+  background-color: var(--paper);
+  /* Tessellation motif: a faint mosaic tile grid woven into the limestone.
+     Two offset hairline grids = the through-line, kept very quiet. */
+  background-image:
+    linear-gradient(var(--line) 1px, transparent 1px),
+    linear-gradient(90deg, var(--line) 1px, transparent 1px);
+  background-size: 48px 48px, 48px 48px;
+  background-position: -1px -1px, -1px -1px;
+  background-attachment: fixed;
+  color: var(--ink);
   font-family: var(--font-sans);
-  line-height: 1.55;
+  font-size: 17px;
+  line-height: 1.6;
   -webkit-font-smoothing: antialiased;
+  text-rendering: optimizeLegibility;
 }
-main { max-width: 1120px; margin: 0 auto; padding: var(--space-6) var(--space-3); }
+
+/* Soften the grid so it reads as substrate, not a wireframe. */
+body::before {
+  content: '';
+  position: fixed;
+  inset: 0;
+  background: var(--paper);
+  opacity: 0.55;
+  pointer-events: none;
+  z-index: -1;
+}
+
+h1, h2, h3 { font-family: var(--font-display); font-weight: 480; letter-spacing: -0.012em; line-height: 1.1; }
 p { max-width: var(--measure); }
-a { color: var(--color-accent); }
-:focus-visible { outline: 2px solid var(--color-accent); outline-offset: 2px; }
+
+a { color: var(--lapis); text-underline-offset: 2px; }
+a:hover { color: var(--lapis-700); }
+
+:focus-visible { outline: 2px solid var(--lapis); outline-offset: 2px; border-radius: 3px; }
+
+/* ── Shared primitives ──────────────────────────────────────────────────── */
+
+.wrap { max-width: var(--measure-page); margin: 0 auto; padding-inline: clamp(20px, 5vw, 40px); }
+
+/* Eyebrow — the "standards / machine" mono voice */
+.eyebrow {
+  font-family: var(--font-mono);
+  font-size: 0.78rem;
+  letter-spacing: 0.18em;
+  text-transform: uppercase;
+  color: var(--gold);
+  margin: 0;
+  font-weight: 500;
+}
+
+/* Tessellated hairline divider — a row of grout-edged glass tiles */
+.tessella-rule {
+  border: 0;
+  height: 10px;
+  margin: 0;
+  background-image:
+    linear-gradient(45deg, var(--line) 25%, transparent 25%, transparent 75%, var(--line) 75%),
+    linear-gradient(45deg, var(--line) 25%, transparent 25%, transparent 75%, var(--line) 75%);
+  background-size: 10px 10px;
+  background-position: 0 0, 5px 5px;
+  opacity: 0.7;
+}
+
+/* Tile card */
+.tile {
+  background: var(--paper-2);
+  border: 1px solid var(--line);
+  border-radius: var(--radius);
+  box-shadow: var(--shadow-1), var(--tile-inner);
+}
+
+/* Glass-tile section marker (the recurring tessera) */
+.tessera-mark {
+  display: inline-block;
+  width: 12px; height: 12px;
+  background: linear-gradient(135deg, var(--lapis) 0%, var(--lapis-700) 100%);
+  border-radius: 3px;
+  transform: rotate(45deg);
+  box-shadow: 0 0 0 2px var(--paper), 0 0 0 3px var(--line);
+}
+
+/* Mono data label / RFC / standard token */
+.token {
+  font-family: var(--font-mono);
+  font-size: 0.8rem;
+  letter-spacing: 0.02em;
+}
+
 @media (prefers-reduced-motion: reduce) {
+  html { scroll-behavior: auto; }
   *, *::before, *::after { animation-duration: 0.01ms !important; transition-duration: 0.01ms !important; }
 }

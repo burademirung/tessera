@@ -10,21 +10,33 @@ const techs = (await getCollection('technologies')).sort(
 const total = techs.reduce((n, t) => n + t.data.bestPractices.length, 0);
 ---
 <Base title="Best practices we followed — Tessera" description="Every best practice applied across the Tessera identity engine, grouped by technology, each claim backed by a cited source.">
-  <main>
-    <h1 style="font-size:clamp(1.8rem,4vw,2.6rem); margin-bottom:var(--space-2);">
-      Best practices we followed
-    </h1>
-    <p style="color:var(--color-muted); font-size:1.1rem; max-width:var(--measure);">
-      {total} cited practices across {techs.length} technologies. Every claim
-      links to its authoritative source.
-    </p>
-    {techs.map((t) => (
-      <section style="margin-top:var(--space-5);" aria-labelledby={`bp-${t.data.requirementKey}`}>
-        <h2 id={`bp-${t.data.requirementKey}`} style="font-size:1.3rem;">
-          <a href={`/standards/${t.id}`} style="color:inherit; text-decoration:none;">{t.data.name}</a>
-        </h2>
-        <BestPracticesList items={t.data.bestPractices} />
-      </section>
-    ))}
+  <main id="main" class="page">
+    <div class="wrap">
+      <p class="eyebrow">CITED PRACTICE</p>
+      <h1 class="page__h1">Best practices we followed</h1>
+      <p class="page__lede">
+        {total} cited practices across {techs.length} technologies. Every claim
+        links to its authoritative source.
+      </p>
+      {techs.map((t) => (
+        <section class="bp tile" aria-labelledby={`bp-${t.data.requirementKey}`}>
+          <h2 id={`bp-${t.data.requirementKey}`} class="bp__h2">
+            <span class="bp__mark" aria-hidden="true"></span>
+            <a href={`/standards/${t.id}`}>{t.data.name}</a>
+          </h2>
+          <BestPracticesList items={t.data.bestPractices} />
+        </section>
+      ))}
+    </div>
   </main>
 </Base>
+<style>
+  .page { padding-block: clamp(48px, 8vw, 96px); }
+  .page__h1 { font-size: clamp(2rem, 5vw, 3rem); margin: var(--space-2) 0; }
+  .page__lede { color: var(--muted); font-size: 1.15rem; max-width: var(--measure); }
+  .bp { padding: var(--space-4); margin-top: var(--space-3); }
+  .bp__h2 { font-size: 1.25rem; margin: 0 0 var(--space-3); display: flex; align-items: center; gap: 10px; }
+  .bp__h2 a { color: inherit; text-decoration: none; }
+  .bp__h2 a:hover { color: var(--lapis); }
+  .bp__mark { width: 10px; height: 10px; background: var(--gold); border-radius: 2px; transform: rotate(45deg); flex: none; }
+</style>

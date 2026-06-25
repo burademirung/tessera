@@ -20,7 +20,8 @@ function Nodes() {
   return (
     <Instances limit={positions.length} dispose={null}>
       <sphereGeometry args={[0.45, 24, 24]} />
-      <meshStandardMaterial color="#FFFFFF" roughness={0.5} />
+      {/* Gold node markers — the rare mosaic accent on the tessera tiles. */}
+      <meshStandardMaterial color="#B0842B" roughness={0.42} metalness={0.15} />
       {positions.map((p, i) => (
         <Instance key={GRAPH_NODES[i].id} position={p} />
       ))}
@@ -39,11 +40,11 @@ export function NodeLabels({ lite = false }: { lite?: boolean }) {
         <Billboard key={n.id} position={[positions[i][0], positions[i][1] - 0.85, positions[i][2]]}>
           <Text
             fontSize={lite ? 0.42 : 0.46}
-            color="#1A1A22"
+            color="#15171C"
             anchorX="center"
             anchorY="middle"
             outlineWidth={0.04}
-            outlineColor="#FFFFFF"
+            outlineColor="#FBFAF7"
             maxWidth={4}
             textAlign="center"
           >
@@ -63,7 +64,7 @@ function Edges() {
         <Line
           key={e.id}
           points={[positionOf(e.from), positionOf(e.to)]}
-          color="#E6E6EC"
+          color="#E4E1D8"
           lineWidth={1}
         />
       ))}

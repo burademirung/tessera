@@ -9,18 +9,29 @@ const techs = (await getCollection('technologies')).sort(
 );
 ---
 <Base title="Standards & technologies — Tessera" description="Every technology in the Tessera identity engine, the standards it follows, and the best practices applied — each claim citation-backed.">
-  <main>
-    <h1 style="font-size:clamp(1.8rem,4vw,2.6rem); margin-bottom:var(--space-2);">
-      Standards &amp; technologies
-    </h1>
-    <p style="color:var(--color-muted); font-size:1.1rem; max-width:var(--measure);">
-      Each technology is built to the standards it follows, with the best
-      practices applied — and every claim is backed by a cited source.
-    </p>
-    <div style={`display:grid; gap:var(--space-3); margin-top:var(--space-4); grid-template-columns:repeat(auto-fill, minmax(280px, 1fr));`}>
-      {techs.map((t) => (
-        <TechnologyCard id={t.id} name={t.data.name} tagline={t.data.tagline} />
-      ))}
+  <main id="main" class="page">
+    <div class="wrap">
+      <p class="eyebrow">STANDARDS &amp; TECHNOLOGIES</p>
+      <h1 class="page__h1">Standards &amp; technologies</h1>
+      <p class="page__lede">
+        Each technology is built to the standards it follows, with the best
+        practices applied — and every claim is backed by a cited source.
+        Everything here is also on the <a href="/#technologies">single page</a>.
+      </p>
+      <div class="cardgrid">
+        {techs.map((t) => (
+          <TechnologyCard id={t.id} name={t.data.name} tagline={t.data.tagline} />
+        ))}
+      </div>
     </div>
   </main>
 </Base>
+<style>
+  .page { padding-block: clamp(48px, 8vw, 96px); }
+  .page__h1 { font-size: clamp(2rem, 5vw, 3rem); margin: var(--space-2) 0; }
+  .page__lede { color: var(--muted); font-size: 1.15rem; max-width: var(--measure); }
+  .cardgrid {
+    display: grid; gap: var(--space-3); margin-top: var(--space-5);
+    grid-template-columns: repeat(auto-fill, minmax(280px, 1fr));
+  }
+</style>

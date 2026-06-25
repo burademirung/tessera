@@ -3,19 +3,24 @@ interface Props { id: string; name: string; tagline: string }
 const { id, name, tagline } = Astro.props;
 ---
 <a class="techcard" href={`/standards/${id}`}>
+  <span class="techcard__mark" aria-hidden="true"></span>
   <p class="techcard__name">{name}</p>
   <p class="techcard__tag">{tagline}</p>
 </a>
 <style>
   .techcard {
     display: block; text-decoration: none; color: inherit;
-    background: var(--color-surface); border: 1px solid var(--color-border);
+    background: var(--paper-2); border: 1px solid var(--line);
     border-radius: var(--radius); padding: var(--space-3);
-    box-shadow: var(--shadow-1);
-    transition: box-shadow var(--dur-standard) var(--ease-standard), transform var(--dur-standard) var(--ease-standard);
+    box-shadow: var(--shadow-1), var(--tile-inner);
+    transition: box-shadow var(--dur-standard) var(--ease-standard), transform var(--dur-standard) var(--ease-standard), border-color var(--dur-standard) var(--ease-standard);
   }
-  .techcard:hover { box-shadow: var(--shadow-2); transform: translateY(-2px); }
-  .techcard__name { margin: 0 0 var(--space-1); font-size: 1.1rem; font-weight: 600; }
-  .techcard__tag { margin: 0; color: var(--color-muted); font-size: 0.95rem; }
+  .techcard:hover { box-shadow: var(--shadow-2); transform: translateY(-2px); border-color: var(--lapis); }
+  .techcard__mark {
+    display: inline-block; width: 9px; height: 9px; margin-bottom: var(--space-2);
+    background: var(--gold); border-radius: 2px; transform: rotate(45deg);
+  }
+  .techcard__name { margin: 0 0 6px; font-family: var(--font-display); font-size: 1.12rem; font-weight: 520; }
+  .techcard__tag { margin: 0; color: var(--muted); font-size: 0.92rem; line-height: 1.5; }
   @media (prefers-reduced-motion: reduce) { .techcard:hover { transform: none; } }
 </style>

@@ -1,8 +1,19 @@
 ---
 import '../styles/global.css';
 import { ClientRouter } from 'astro:transitions';
-interface Props { title: string; description: string }
-const { title, description } = Astro.props;
+interface Props { title: string; description: string; sectionNav?: boolean }
+const { title, description, sectionNav = false } = Astro.props;
+
+const NAV = [
+  { id: 'overview', label: 'Overview' },
+  { id: 'system', label: 'System' },
+  { id: 'how-it-works', label: 'How it works' },
+  { id: 'stack', label: 'Stack' },
+  { id: 'usage', label: 'Usage' },
+  { id: 'standards', label: 'Standards' },
+  { id: 'best-practices', label: 'Best practices' },
+  { id: 'technologies', label: 'Technologies' },
+];
 ---
 <!doctype html>
 <html lang="en">
@@ -15,56 +26,137 @@ const { title, description } = Astro.props;
     <ClientRouter />
   </head>
   <body>
+    <a class="skip-link" href="#main">Skip to content</a>
     <header class="site-topbar">
-      <a class="brand" href="/" aria-label="Tessera — home">Tessera</a>
-      <div class="attribution">
-        <span class="built">Built by <strong>Vladimir Kamenev</strong></span>
-        <a href="mailto:burademirung@gmail.com">burademirung@gmail.com</a>
-        <a href="tel:+15123369618">512 3369618</a>
-        <a class="gh" href="https://github.com/burademirung/tessera" target="_blank" rel="noopener noreferrer" aria-label="Tessera source on GitHub">
-          <svg width="16" height="16" viewBox="0 0 16 16" aria-hidden="true" fill="currentColor"><path d="M8 0C3.58 0 0 3.58 0 8c0 3.54 2.29 6.53 5.47 7.59.4.07.55-.17.55-.38 0-.19-.01-.82-.01-1.49-2.01.37-2.53-.49-2.69-.94-.09-.23-.48-.94-.82-1.13-.28-.15-.68-.52-.01-.53.63-.01 1.08.58 1.23.82.72 1.21 1.87.87 2.33.66.07-.52.28-.87.51-1.07-1.78-.2-3.64-.89-3.64-3.95 0-.87.31-1.59.82-2.15-.08-.2-.36-1.02.08-2.12 0 0 .67-.21 2.2.82.64-.18 1.32-.27 2-.27.68 0 1.36.09 2 .27 1.53-1.04 2.2-.82 2.2-.82.44 1.1.16 1.92.08 2.12.51.56.82 1.27.82 2.15 0 3.07-1.87 3.75-3.65 3.95.29.25.54.73.54 1.48 0 1.07-.01 1.93-.01 2.2 0 .21.15.46.55.38A8.01 8.01 0 0016 8c0-4.42-3.58-8-8-8z"/></svg>
-          <span>GitHub</span>
+      <div class="wrap site-topbar__inner">
+        <a class="brand" href="/" aria-label="Tessera — home">
+          <span class="tessera-mark" aria-hidden="true"></span> Tessera
         </a>
+        <div class="attribution">
+          <span class="built">Built by <strong>Vladimir Kamenev</strong></span>
+          <a href="mailto:burademirung@gmail.com">burademirung@gmail.com</a>
+          <a href="tel:+15123369618">512 3369618</a>
+          <a class="gh" href="https://github.com/burademirung/tessera" target="_blank" rel="noopener noreferrer" aria-label="Tessera source on GitHub">
+            <svg width="16" height="16" viewBox="0 0 16 16" aria-hidden="true" fill="currentColor"><path d="M8 0C3.58 0 0 3.58 0 8c0 3.54 2.29 6.53 5.47 7.59.4.07.55-.17.55-.38 0-.19-.01-.82-.01-1.49-2.01.37-2.53-.49-2.69-.94-.09-.23-.48-.94-.82-1.13-.28-.15-.68-.52-.01-.53.63-.01 1.08.58 1.23.82.72 1.21 1.87.87 2.33.66.07-.52.28-.87.51-1.07-1.78-.2-3.64-.89-3.64-3.95 0-.87.31-1.59.82-2.15-.08-.2-.36-1.02.08-2.12 0 0 .67-.21 2.2.82.64-.18 1.32-.27 2-.27.68 0 1.36.09 2 .27 1.53-1.04 2.2-.82 2.2-.82.44 1.1.16 1.92.08 2.12.51.56.82 1.27.82 2.15 0 3.07-1.87 3.75-3.65 3.95.29.25.54.73.54 1.48 0 1.07-.01 1.93-.01 2.2 0 .21.15.46.55.38A8.01 8.01 0 0016 8c0-4.42-3.58-8-8-8z"/></svg>
+            <span>GitHub</span>
+          </a>
+        </div>
       </div>
     </header>
+
+    {sectionNav && (
+      <nav class="section-nav" aria-label="Page sections">
+        <ul class="wrap section-nav__list">
+          {NAV.map((n) => (
+            <li><a href={`#${n.id}`}>{n.label}</a></li>
+          ))}
+        </ul>
+      </nav>
+    )}
+
     <slot />
+
     <footer class="site-footer">
-      <span>© 2026 Tessera — a bespoke identity engine.</span>
-      <span>Built by <strong>Vladimir Kamenev</strong> ·
-        <a href="mailto:burademirung@gmail.com">burademirung@gmail.com</a> ·
-        <a href="tel:+15123369618">512 3369618</a> ·
-        <a href="https://github.com/burademirung/tessera" target="_blank" rel="noopener noreferrer">github.com/burademirung/tessera</a>
-      </span>
+      <div class="wrap site-footer__inner">
+        <span>© 2026 Tessera — a bespoke identity engine.</span>
+        <span>Built by <strong>Vladimir Kamenev</strong> ·
+          <a href="mailto:burademirung@gmail.com">burademirung@gmail.com</a> ·
+          <a href="tel:+15123369618">512 3369618</a> ·
+          <a href="https://github.com/burademirung/tessera" target="_blank" rel="noopener noreferrer">github.com/burademirung/tessera</a>
+        </span>
+      </div>
     </footer>
+
     <style>
+      .skip-link {
+        position: absolute; left: -9999px; top: 0; z-index: 100;
+        background: var(--lapis); color: #fff; padding: 8px 16px; border-radius: 0 0 var(--radius) 0;
+        font-weight: 600; text-decoration: none;
+      }
+      .skip-link:focus { left: 0; }
+
       .site-topbar {
+        background: var(--paper-2);
+        border-bottom: 1px solid var(--line);
+        font-size: 0.84rem;
+      }
+      .site-topbar__inner {
         display: flex; align-items: center; justify-content: space-between;
         gap: var(--space-3); flex-wrap: wrap;
-        padding: var(--space-1) var(--space-3);
-        background: var(--color-surface);
-        border-bottom: 1px solid var(--color-border);
-        font-size: 0.875rem;
+        padding-block: 10px;
       }
-      .site-topbar .brand {
-        font-weight: 700; letter-spacing: 0.04em; text-transform: uppercase;
-        color: var(--color-text); text-decoration: none;
+      .brand {
+        display: inline-flex; align-items: center; gap: 10px;
+        font-family: var(--font-display); font-weight: 560; font-size: 1.05rem;
+        letter-spacing: 0.01em; color: var(--ink); text-decoration: none;
       }
-      .site-topbar .attribution { display: flex; align-items: center; gap: var(--space-2); flex-wrap: wrap; color: var(--color-muted); }
-      .site-topbar .attribution a { color: var(--color-muted); text-decoration: none; }
-      .site-topbar .attribution a:hover { color: var(--color-accent); text-decoration: underline; }
-      .site-topbar .built strong { color: var(--color-text); font-weight: 600; }
-      .site-topbar .gh { display: inline-flex; align-items: center; gap: 6px; padding: 4px 10px; border: 1px solid var(--color-border); border-radius: 999px; color: var(--color-text) !important; }
-      .site-topbar .gh:hover { border-color: var(--color-accent); }
+      .brand .tessera-mark { width: 11px; height: 11px; }
+      .attribution { display: flex; align-items: center; gap: var(--space-2); flex-wrap: wrap; color: var(--muted); }
+      .attribution a { color: var(--muted); text-decoration: none; }
+      .attribution a:hover { color: var(--lapis); text-decoration: underline; }
+      .built strong { color: var(--ink); font-weight: 600; }
+      .gh {
+        display: inline-flex; align-items: center; gap: 6px; padding: 4px 12px;
+        border: 1px solid var(--line); border-radius: 999px; color: var(--ink) !important;
+        background: var(--paper);
+      }
+      .gh:hover { border-color: var(--lapis); }
+
+      /* Sticky section nav — thin, glassy, mosaic grout under it */
+      .section-nav {
+        position: sticky; top: 0; z-index: 40;
+        background: color-mix(in srgb, var(--paper-2) 88%, transparent);
+        backdrop-filter: saturate(1.2) blur(8px);
+        border-bottom: 1px solid var(--line);
+      }
+      .section-nav__list {
+        display: flex; gap: 4px; flex-wrap: wrap; list-style: none;
+        margin: 0; padding-block: 8px;
+        overflow-x: auto;
+      }
+      .section-nav__list a {
+        display: inline-block; padding: 6px 12px; border-radius: 999px;
+        font-family: var(--font-mono); font-size: 0.74rem; letter-spacing: 0.04em;
+        color: var(--muted); text-decoration: none; white-space: nowrap;
+        transition: background var(--dur-standard) var(--ease-standard), color var(--dur-standard) var(--ease-standard);
+      }
+      .section-nav__list a:hover { color: var(--lapis); background: var(--gold-soft); }
+      .section-nav__list a[aria-current='true'] { color: var(--lapis); background: color-mix(in srgb, var(--lapis) 10%, transparent); }
+
       .site-footer {
-        display: flex; align-items: center; justify-content: space-between;
-        gap: var(--space-3); flex-wrap: wrap;
-        padding: var(--space-3); margin-top: var(--space-6);
-        border-top: 1px solid var(--color-border);
-        color: var(--color-muted); font-size: 0.85rem;
+        border-top: 1px solid var(--line);
+        background: var(--paper-2);
+        color: var(--muted); font-size: 0.82rem;
+        margin-top: var(--section-pad);
       }
-      .site-footer a { color: var(--color-muted); }
-      .site-footer a:hover { color: var(--color-accent); }
-      .site-footer strong { color: var(--color-text); }
+      .site-footer__inner {
+        display: flex; align-items: center; justify-content: space-between;
+        gap: var(--space-3); flex-wrap: wrap; padding-block: var(--space-4);
+      }
+      .site-footer a { color: var(--muted); }
+      .site-footer a:hover { color: var(--lapis); }
+      .site-footer strong { color: var(--ink); }
     </style>
+
+    {sectionNav && (
+      <script>
+        // Scroll-spy: mark the section nav link for the section in view.
+        // Pure progressive enhancement; respects reduced-motion via CSS only.
+        const links = Array.from(document.querySelectorAll<HTMLAnchorElement>('.section-nav__list a'));
+        const byId = new Map(links.map((l) => [l.getAttribute('href')?.slice(1), l]));
+        const obs = new IntersectionObserver(
+          (entries) => {
+            for (const e of entries) {
+              if (e.isIntersecting) {
+                links.forEach((l) => l.removeAttribute('aria-current'));
+                byId.get(e.target.id)?.setAttribute('aria-current', 'true');
+              }
+            }
+          },
+          { rootMargin: '-45% 0px -50% 0px', threshold: 0 },
+        );
+        document.querySelectorAll('main section[id]').forEach((s) => obs.observe(s));
+      </script>
+    )}
   </body>
 </html>
