@@ -1,7 +1,11 @@
 pub mod federation;
 pub mod internal_token;
+pub mod jwks;
 pub mod jwt;
 pub mod util;
+
+#[cfg(target_arch = "wasm32")]
+pub mod webcrypto_rsa;
 
 #[cfg(target_arch = "wasm32")]
 mod worker_entry {
