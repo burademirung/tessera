@@ -1,0 +1,51 @@
+---
+name: 3D frontend · WCAG 2.2 AA
+tagline: A live R3F flow graph that is purposeful, not gimmicky — with a semantic SVG that is the source of truth, the reduced-motion alt, and the low-end fallback all at once.
+order: 160
+requirementKey: frontend-3d-wcag
+standards:
+  - name: WCAG 2.2 (W3C Recommendation)
+    url: https://www.w3.org/TR/WCAG22/
+  - name: Core Web Vitals
+    url: https://web.dev/articles/vitals
+  - name: Astro Islands
+    url: https://docs.astro.build/en/concepts/islands/
+codeLang: tsx
+codeSample: |
+  // The SVG graph is the source of truth and triple-duties as the a11y
+  // equivalent, the reduced-motion alternative, and the low-end fallback.
+  function decideRenderMode(i: CapabilityInputs): RenderMode {
+    if (i.reducedMotion || i.saveData) return 'poster';   // static poster = LCP
+    if (!i.webgl || i.gpuTier <= 1 || i.cores < 4) return 'svg';
+    if (i.gpuTier === 2) return 'webgl-lite';
+    return 'webgl-full';
+  }
+  // R3F discipline: frameloop="demand", drei Instances, dispose={null},
+  // never setState per frame — mutate refs / shader uniforms in useFrame.
+bestPractices:
+  - claim: Make a semantic SVG/HTML graph the source of truth so it doubles as the a11y equivalent, reduced-motion alternative, and low-end fallback (one artifact, triple duty).
+    sourceUrl: https://www.w3.org/TR/WCAG22/
+  - claim: Distinguish node types by icon + text label, never color alone (WCAG 1.4.1); keep contrast >=4.5:1 (1.4.3); provide a visible Pause and keep pulses <=3/s (2.3.1).
+    sourceUrl: https://www.w3.org/TR/WCAG22/
+  - claim: Make the poster Image the LCP element (the canvas is not an LCP candidate) and reserve the canvas box with `aspect-ratio` for zero CLS.
+    sourceUrl: https://web.dev/articles/vitals
+  - claim: Keep content static-first (zero JS); the 3D graph is one capability-gated `client:only` island mounted behind an IntersectionObserver.
+    sourceUrl: https://docs.astro.build/en/concepts/islands/
+  - claim: Apply R3F discipline — `frameloop="demand"`, drei Instances with shared geometry/material, `dispose={null}`, and never `setState` per frame.
+    sourceUrl: https://docs.astro.build/en/concepts/islands/
+---
+
+The site's signature is a **live 3D identity-flow graph**, used because it is
+genuinely informational — you watch a token flow from the IdP through the edge
+engine and into the clouds — not as decoration. It is one capability-gated
+`client:only` Astro island; everything else on the site is static with zero
+client JS.
+
+Accessibility is designed in, not bolted on. A **semantic SVG graph is the source
+of truth**, and the same artifact serves triple duty: the screen-reader-
+accessible equivalent, the `prefers-reduced-motion` alternative, and the low-end
+fallback. Node types are distinguished by icon and label (never color alone),
+contrast stays >=4.5:1 on the light theme, a visible Pause control exists, and
+pulses stay under three per second. The poster image — not the canvas — is the
+LCP element, and the canvas box is reserved with `aspect-ratio` so layout never
+shifts.

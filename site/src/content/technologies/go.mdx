@@ -1,0 +1,45 @@
+---
+name: Go (control plane)
+tagline: Native idiomatic Go orchestrator running the JML lifecycle and a multi-step offboarding saga with the real cloud SDKs.
+order: 90
+requirementKey: go
+standards:
+  - name: NIST SP 800-53 r5 (AC-2, PS-4, PS-5)
+    url: https://csrc.nist.gov/pubs/sp/800/53/r5/upd1/final
+  - name: OAuth 2.0 Token Revocation
+    rfc: RFC 7009
+    url: https://www.rfc-editor.org/rfc/rfc7009
+  - name: OpenID Connect Back-Channel Logout 1.0
+    url: https://openid.net/specs/openid-connect-backchannel-1_0.html
+codeLang: go
+codeSample: |
+  // Leaver is a SAGA, not a flag flip: active=false alone leaves live sessions
+  // and refresh tokens valid. All four steps must go green to be "offboarded".
+  func Offboard(ctx context.Context, id Identity) error {
+      if err := scim.Disable(ctx, id); err != nil { return err }            // 1. SCIM active=false
+      if err := oauth.RevokeGrant(ctx, id); err != nil { return err }       // 2. RFC 7009
+      if err := oidc.BackChannelLogout(ctx, id); err != nil { return err }  // 3. terminate sessions
+      return apikeys.RevokeAll(ctx, id)                                     // 4. revoke API keys
+  }
+bestPractices:
+  - claim: Deprovisioning is a saga, not `active=false` — disable, revoke OAuth grant/refresh, terminate sessions, revoke API keys (all must succeed).
+    sourceUrl: https://www.rfc-editor.org/rfc/rfc7009
+  - claim: Terminate all sessions on disable/delete via OIDC Back-Channel Logout — a disabled account with live sessions is still active.
+    sourceUrl: https://openid.net/specs/openid-connect-backchannel-1_0.html
+  - claim: On a Mover, recalculate `grant = target - current` and `revoke = current - target`; add-only privilege is a bug (NIST PS-5).
+    sourceUrl: https://csrc.nist.gov/pubs/sp/800/53/r5/upd1/final
+  - claim: Run native Go (not TinyGo) in scheduled CI so the real AWS/Azure/GCP SDKs and full stdlib are available.
+    sourceUrl: https://developers.cloudflare.com/workers/languages/rust/
+---
+
+Go is where the **control plane** lives — native, idiomatic Go with the real
+AWS, Azure and GCP SDKs, running as scheduled GitHub Actions and locally (not
+TinyGo on Workers, which can't load those SDKs). It drives the Joiner-Mover-
+Leaver lifecycle, risk-tiered access reviews, and federation orchestration.
+
+Its most important correction is the **Leaver saga**. Setting SCIM
+`active=false` only blocks the next login; live sessions and refresh tokens
+stay valid. So offboarding is a four-step saga that must all go green: disable in
+SCIM, revoke the OAuth grant and refresh tokens (RFC 7009), terminate sessions
+via OIDC Back-Channel Logout, and revoke API keys. For-cause offboards run
+immediately (under five minutes); routine ones run at termination via Cron.

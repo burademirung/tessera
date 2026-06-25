@@ -1,0 +1,53 @@
+---
+name: Terraform
+tagline: Three thin per-cloud trust modules composed in one root, state on R2 with native lockfile, tested with mock providers.
+order: 110
+requirementKey: terraform
+standards:
+  - name: Terraform Style Guide
+    url: https://developer.hashicorp.com/terraform/language/style
+  - name: terraform test (mock_provider)
+    url: https://developer.hashicorp.com/terraform/language/tests
+  - name: S3 backend (use_lockfile)
+    url: https://developer.hashicorp.com/terraform/language/backend/s3
+codeLang: hcl
+codeSample: |
+  # State on Cloudflare R2 via the s3 backend, native S3 lockfile (TF >= 1.11).
+  # DynamoDB locking is DEPRECATED — do not use it.
+  terraform {
+    required_version = ">= 1.11"
+    backend "s3" {
+      bucket                      = "lifecycle-tfstate"
+      key                         = "federation/terraform.tfstate"
+      region                      = "auto"
+      use_lockfile                = true
+      skip_credentials_validation = true
+      skip_metadata_api_check     = true
+      skip_region_validation      = true
+      skip_requesting_account_id  = true
+      skip_s3_checksum            = true
+      use_path_style              = true
+    }
+  }
+bestPractices:
+  - claim: Use small composable per-cloud modules (aws-oidc-trust / gcp-wif / azure-fic) over a cross-cloud monolith — the clouds differ too much.
+    sourceUrl: https://developer.hashicorp.com/terraform/language/style
+  - claim: Lock state with the native S3 `use_lockfile` (TF 1.10+); DynamoDB-based locking is deprecated.
+    sourceUrl: https://developer.hashicorp.com/terraform/language/backend/s3
+  - claim: Test with `terraform test` + `mock_provider` to assert trust-policy `sub`/`aud` conditions without touching any cloud.
+    sourceUrl: https://developer.hashicorp.com/terraform/language/tests
+  - claim: Pin all providers with `~>`, commit `.terraform.lock.hcl`, and pass providers explicitly to modules (aliased configs aren't auto-inherited).
+    sourceUrl: https://developer.hashicorp.com/terraform/language/style
+---
+
+Terraform owns the **multi-cloud identity-trust plane**: the OIDC trust that lets
+AWS, Azure and GCP accept tokens from the edge engine. Following the HashiCorp
+style guide, that is three thin per-cloud modules — `aws-oidc-trust`, `gcp-wif`,
+`azure-fic` — composed in a single root, rather than a leaky "universal
+federation" abstraction, because the three clouds genuinely differ.
+
+State lives on Cloudflare R2 through the `s3` backend with the **native
+`use_lockfile`** (DynamoDB locking is deprecated). The trust conditions — exact
+`aud` and exact `sub`, never wildcards — are unit-tested with `terraform test`
+and `mock_provider`, so the confused-deputy guardrails are verified without ever
+calling a cloud API.

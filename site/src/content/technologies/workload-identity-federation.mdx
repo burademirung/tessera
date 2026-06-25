@@ -1,0 +1,57 @@
+---
+name: Workload Identity Federation (AWS · Azure · GCP)
+tagline: Keyless, free, live federation into all three clouds — a distinct RS256 token per cloud, exact aud + exact sub, no wildcards.
+order: 130
+requirementKey: workload-identity-federation
+standards:
+  - name: AWS — AssumeRoleWithWebIdentity / IAM OIDC
+    url: https://docs.aws.amazon.com/IAM/latest/UserGuide/id_roles_providers_oidc.html
+  - name: GCP — Workload Identity Federation
+    url: https://cloud.google.com/iam/docs/workload-identity-federation
+  - name: Azure — Workload Identity Federation (FIC)
+    url: https://learn.microsoft.com/en-us/entra/workload-id/workload-identity-federation
+codeLang: hcl
+codeSample: |
+  # The confused-deputy lesson applied to all three clouds: pin aud EXACT and
+  # sub EXACT (StringEquals, never StringLike / wildcards).
+  resource "aws_iam_role" "federated" {
+    assume_role_policy = jsonencode({
+      Version = "2012-10-17"
+      Statement = [{
+        Effect    = "Allow"
+        Principal = { Federated = aws_iam_openid_connect_provider.edge.arn }
+        Action    = "sts:AssumeRoleWithWebIdentity"
+        Condition = {
+          StringEquals = {
+            "${local.issuer_host}:aud" = var.aws_client_id        # exact
+            "${local.issuer_host}:sub" = var.expected_subject      # exact, no wildcard
+          }
+        }
+      }]
+    })
+  }
+bestPractices:
+  - claim: Pin `aud` exact AND `sub` exact (StringEquals, never wildcards) on every cloud — the #1 OIDC federation misconfiguration.
+    sourceUrl: https://docs.aws.amazon.com/IAM/latest/UserGuide/id_roles_providers_oidc.html
+  - claim: Sign federation tokens RS256 (Azure is RS256-only; AWS and GCP also accept it) and issue a distinct token with the correct `aud` per cloud.
+    sourceUrl: https://learn.microsoft.com/en-us/entra/workload-id/workload-identity-federation
+  - claim: On AWS, omit `thumbprint_list` — thumbprints are obsolete since 2024-07 with a public CA; the JWKS endpoint must be publicly reachable (no upload fallback).
+    sourceUrl: https://docs.aws.amazon.com/IAM/latest/UserGuide/id_roles_providers_oidc.html
+  - claim: On GCP use direct resource access (principalSet://, no service account) with a CEL attribute-condition and `exp - iat <= 24h`.
+    sourceUrl: https://cloud.google.com/iam/docs/workload-identity-federation
+  - claim: On Azure use an app registration with a Federated Identity Credential (not UAMI), exact-match iss/sub/aud, and build in a propagation delay + retry (new FICs take minutes).
+    sourceUrl: https://learn.microsoft.com/en-us/entra/workload-id/workload-identity-federation
+---
+
+Multi-cloud federation needs **trust plus short-lived token exchange**, not
+running cloud compute — which is why Lifecycle's live federation into AWS, Azure
+**and** GCP is genuinely keyless and free. The edge engine, acting as an OIDC
+Provider, mints a **distinct RS256 token per cloud** (the only algorithm all
+three accept; Azure is RS256-only), each with that cloud's correct `aud`.
+
+The single most important rule, learned from real confused-deputy breaches, is
+applied identically to all three: pin **exact `aud` and exact `sub`**, never a
+wildcard. Each cloud then adds its own quirk — AWS drops the obsolete thumbprint
+and requires a publicly reachable JWKS, GCP uses direct resource access with a
+CEL condition and a 24h token limit, and Azure needs an app-registration FIC plus
+a propagation delay and retry because new credentials take minutes to take effect.
