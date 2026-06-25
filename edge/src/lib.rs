@@ -1,4 +1,5 @@
 pub mod discovery;
+pub mod dpop;
 pub mod federation;
 pub mod internal_token;
 pub mod introspect;
