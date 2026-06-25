@@ -1,0 +1,66 @@
+---
+name: OpenID Connect (OIDC)
+tagline: The engine is an OIDC Relying Party to Okta and Entra, and a real OIDC Provider that the clouds trust.
+order: 10
+requirementKey: oidc
+standards:
+  - name: OpenID Connect Core 1.0 (errata 2)
+    url: https://openid.net/specs/openid-connect-core-1_0.html
+  - name: PKCE
+    rfc: RFC 7636
+    url: https://www.rfc-editor.org/rfc/rfc7636
+  - name: Authorization Server Issuer Identification
+    rfc: RFC 9207
+    url: https://www.rfc-editor.org/rfc/rfc9207
+  - name: OpenID Connect Discovery 1.0
+    url: https://openid.net/specs/openid-connect-discovery-1_0.html
+codeLang: rust
+codeSample: |
+  // Edge RP: Authorization Code + PKCE with EXPLICIT S256 (defaults to
+  // `plain` if omitted — the top RP bug). state + nonce always sent.
+  use openidconnect::{PkceCodeChallenge, CsrfToken, Nonce, Scope};
+
+  let (pkce_challenge, pkce_verifier) = PkceCodeChallenge::new_random_sha256();
+
+  let (auth_url, csrf_state, nonce) = client
+      .authorize_url(CsrfToken::new_random, Nonce::new_random)
+      .add_scope(Scope::new("openid".into()))
+      .add_scope(Scope::new("email".into()))
+      .set_pkce_challenge(pkce_challenge) // method = S256, explicit
+      .url();
+
+  // On callback: verify `iss` (RFC 9207) matches the AS we redirected to,
+  // verify `state` == csrf_state, exchange code with pkce_verifier, then
+  // validate the ID token: iss exact, aud contains client_id, signature
+  // against the REGISTERED alg (never the token's self-declared `alg`),
+  // exp in the future, and nonce == the nonce we sent.
+bestPractices:
+  - claim: Send code_challenge_method=S256 explicitly — it defaults to `plain` if omitted (OIDC/PKCE §4.3).
+    sourceUrl: https://www.rfc-editor.org/rfc/rfc7636
+  - claim: Validate the ID token with the registered/expected algorithm, never the token's self-declared `alg` (OIDC §3.1.3.7).
+    sourceUrl: https://openid.net/specs/openid-connect-core-1_0.html
+  - claim: Send and verify both `state` (CSRF) and `nonce` (replay / code-injection) on every flow.
+    sourceUrl: https://openid.net/specs/openid-connect-core-1_0.html
+  - claim: With more than one upstream AS (Okta + Entra) implement the RFC 9207 `iss` response parameter to defend against mix-up.
+    sourceUrl: https://www.rfc-editor.org/rfc/rfc9207
+  - claim: As an OIDC Provider, publish discovery + jwks_uri over public HTTPS with a CA-signed cert and a byte-identical `issuer` (GCP rejects self-signed).
+    sourceUrl: https://openid.net/specs/openid-connect-discovery-1_0.html
+---
+
+OpenID Connect layers identity on top of OAuth 2.0. The Lifecycle edge engine
+plays **both** OIDC roles. As a **Relying Party** it consumes Okta and Entra
+using the Authorization Code flow with PKCE: it generates a fresh
+`code_verifier`, sends the `S256` challenge **explicitly**, and on the callback
+verifies `state`, exchanges the code, and validates the ID token against the
+provider's registered signing key — checking `iss`, `aud`, `exp`, and the
+`nonce` it issued.
+
+Because the engine consumes **two** authorization servers at once, it is the
+textbook mix-up scenario, so it implements the **RFC 9207 `iss` response
+parameter**: it confirms the response came from the AS it actually redirected
+the user to before trusting any token.
+
+As an **OIDC Provider**, the engine publishes
+`/.well-known/openid-configuration` and a `jwks_uri` over public HTTPS with a
+CA-signed certificate and a byte-identical `issuer` value, so AWS, Azure and GCP
+can establish trust against it (see Workload Identity Federation).
