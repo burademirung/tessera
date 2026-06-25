@@ -32,7 +32,7 @@ type Entitlement struct {
 	Role       string
 	Resource   string
 	Privileged bool
-	GrantedBy  string     // grantor identity id; reviewer must differ from this
+	GrantedBy  string // grantor identity id; reviewer must differ from this
 	GrantedAt  time.Time
 	LastUsed   *time.Time // nil = never used; drives revoke recommendations
 }

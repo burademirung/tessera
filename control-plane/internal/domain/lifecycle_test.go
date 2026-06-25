@@ -14,10 +14,10 @@ func TestCanTransition(t *testing.T) {
 		{StateActive, StateOffboarded, true},
 		{StateReviewDue, StateOffboarded, true},
 		{StateProvisioned, StateOffboarded, true},
-		{StateInvited, StateActive, false},     // must be provisioned first
-		{StateOffboarded, StateActive, false},  // terminal
-		{StateActive, StateInvited, false},     // no going back
-		{StateActive, "frozen", false},         // unknown target
+		{StateInvited, StateActive, false},    // must be provisioned first
+		{StateOffboarded, StateActive, false}, // terminal
+		{StateActive, StateInvited, false},    // no going back
+		{StateActive, "frozen", false},        // unknown target
 	}
 	for _, tt := range tests {
 		t.Run(string(tt.from)+"->"+string(tt.to), func(t *testing.T) {
