@@ -4,3 +4,4 @@ pub mod filter;
 pub mod model;
 pub mod page;
 pub mod patch;
+pub mod store;
