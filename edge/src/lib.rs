@@ -1,3 +1,4 @@
+pub mod federation;
 pub mod internal_token;
 pub mod jwt;
 pub mod util;
