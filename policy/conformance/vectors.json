@@ -1,0 +1,77 @@
+{
+	"version": "2026-06-24.1",
+	"query": "data.authz.allow",
+	"data": {
+		"rbac": {
+			"roles": {
+				"reader": {"inherits": [], "permissions": [{"resource": "user", "action": "read"}]},
+				"helpdesk": {"inherits": ["reader"], "permissions": [{"resource": "user", "action": "update"}, {"resource": "session", "action": "read"}]},
+				"provisioner": {"inherits": ["reader"], "permissions": [{"resource": "user", "action": "create"}, {"resource": "user", "action": "update"}]},
+				"approver": {"inherits": ["reader"], "permissions": [{"resource": "access_request", "action": "approve"}]},
+				"admin": {"inherits": ["helpdesk", "provisioner", "approver"], "permissions": [{"resource": "user", "action": "delete"}, {"resource": "session", "action": "revoke"}, {"resource": "policy", "action": "update"}]}
+			}
+		},
+		"abac": {
+			"mfa_required_actions": ["delete", "revoke", "approve", "update"],
+			"maintenance_windows": {"policy": {"start_epoch": 0, "end_epoch": 0}},
+			"min_device_posture": {"delete": "managed", "revoke": "managed", "approve": "managed"},
+			"posture_rank": {"unmanaged": 0, "byod": 1, "managed": 2}
+		},
+		"sod": {
+			"toxic_pairs": [["provisioner", "approver"], ["helpdesk", "approver"]],
+			"self_approval_actions": ["approve"]
+		}
+	},
+	"vectors": [
+		{
+			"name": "reader reads same-tenant user -> allow",
+			"input": {"subject": {"id": "u1", "roles": ["reader"], "tenant": "t1", "mfa": false}, "resource": {"type": "user", "id": "r1", "tenant": "t1"}, "action": "read", "environment": {"now_epoch": 1782259200, "device_posture": "byod"}},
+			"want_allow": true
+		},
+		{
+			"name": "reader cannot delete (envelope) -> deny",
+			"input": {"subject": {"id": "u1", "roles": ["reader"], "tenant": "t1", "mfa": true}, "resource": {"type": "user", "id": "r1", "tenant": "t1"}, "action": "delete", "environment": {"now_epoch": 1782259200, "device_posture": "managed"}},
+			"want_allow": false
+		},
+		{
+			"name": "admin deletes with mfa + managed device -> allow",
+			"input": {"subject": {"id": "u1", "roles": ["admin"], "tenant": "t1", "mfa": true}, "resource": {"type": "user", "id": "r1", "tenant": "t1"}, "action": "delete", "environment": {"now_epoch": 1782259200, "device_posture": "managed"}},
+			"want_allow": true
+		},
+		{
+			"name": "admin delete without mfa (ABAC narrows) -> deny",
+			"input": {"subject": {"id": "u1", "roles": ["admin"], "tenant": "t1", "mfa": false}, "resource": {"type": "user", "id": "r1", "tenant": "t1"}, "action": "delete", "environment": {"now_epoch": 1782259200, "device_posture": "managed"}},
+			"want_allow": false
+		},
+		{
+			"name": "admin delete from unmanaged device (ABAC narrows) -> deny",
+			"input": {"subject": {"id": "u1", "roles": ["admin"], "tenant": "t1", "mfa": true}, "resource": {"type": "user", "id": "r1", "tenant": "t1"}, "action": "delete", "environment": {"now_epoch": 1782259200, "device_posture": "unmanaged"}},
+			"want_allow": false
+		},
+		{
+			"name": "cross-tenant read (BOLA) -> deny",
+			"input": {"subject": {"id": "u1", "roles": ["reader"], "tenant": "t1", "mfa": true}, "resource": {"type": "user", "id": "r1", "tenant": "t2"}, "action": "read", "environment": {"now_epoch": 1782259200, "device_posture": "managed"}},
+			"want_allow": false
+		},
+		{
+			"name": "toxic role pair approves (SoD preventive) -> deny",
+			"input": {"subject": {"id": "u1", "roles": ["provisioner", "approver"], "tenant": "t1", "mfa": true}, "resource": {"type": "access_request", "id": "ar1", "tenant": "t1", "requester": "u9"}, "action": "approve", "environment": {"now_epoch": 1782259200, "device_posture": "managed"}},
+			"want_allow": false
+		},
+		{
+			"name": "self-approval (SoD preventive) -> deny",
+			"input": {"subject": {"id": "u1", "roles": ["approver"], "tenant": "t1", "mfa": true}, "resource": {"type": "access_request", "id": "ar1", "tenant": "t1", "requester": "u1"}, "action": "approve", "environment": {"now_epoch": 1782259200, "device_posture": "managed"}},
+			"want_allow": false
+		},
+		{
+			"name": "clean approver approves other (allow)",
+			"input": {"subject": {"id": "u2", "roles": ["approver"], "tenant": "t1", "mfa": true}, "resource": {"type": "access_request", "id": "ar1", "tenant": "t1", "requester": "u1"}, "action": "approve", "environment": {"now_epoch": 1782259200, "device_posture": "managed"}},
+			"want_allow": true
+		},
+		{
+			"name": "empty request -> default deny",
+			"input": {},
+			"want_allow": false
+		}
+	]
+}

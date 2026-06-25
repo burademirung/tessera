@@ -15,11 +15,12 @@ check:
 lint:
 	regal lint .
 
+# Explicit dirs (not `.`) so opa never tries to load coverage.json as data.
 test:
-	opa test . conformance -v
+	opa test authz conformance -v
 
 cover:
-	opa test . conformance --coverage --format=json --fail-on-empty > coverage.json
-	@opa test . conformance --coverage --format=json | python3 -c "import sys,json; c=json.load(sys.stdin); cov=c.get('coverage',0); print(f'coverage: {cov:.1f}%'); sys.exit(0 if cov>=90 else 1)"
+	opa test authz conformance --coverage --format=json --fail-on-empty > coverage.json
+	@opa test authz conformance --coverage --format=json | python3 -c "import sys,json; c=json.load(sys.stdin); cov=c.get('coverage',0); print(f'coverage: {cov:.1f}%'); sys.exit(0 if cov>=90 else 1)"
 
 all: fmt-check check lint cover
