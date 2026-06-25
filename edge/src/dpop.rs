@@ -41,6 +41,34 @@ pub fn jwk_thumbprint_rfc7638(jwk: &Value) -> Result<String, String> {
     Ok(b64url_encode(&Sha256::digest(canonical.as_bytes())))
 }
 
+/// Build the RFC 9449 `cnf` confirmation claim that binds an issued token to the
+/// DPoP key thumbprint: `"cnf": {"jkt": "<thumbprint>"}`. The signer merges this
+/// into the token claims so the token is sender-constrained. Pure + host-testable.
+pub fn cnf_claim(jkt: &str) -> Value {
+    serde_json::json!({ "jkt": jkt })
+}
+
+/// Assert that a verified DPoP proof's thumbprint matches the `cnf.jkt` bound into
+/// a presented access token (RFC 9449 §7). FAIL-CLOSED: a missing/empty `cnf.jkt`
+/// or any mismatch returns Err — an unbound token is never accepted on a DPoP path.
+/// `claims` is the (already-verified) token claim set. Pure + host-testable.
+pub fn assert_jkt_bound(proof_jkt: &str, token_claims: &Value) -> Result<(), String> {
+    let bound = token_claims
+        .get("cnf")
+        .and_then(|c| c.get("jkt"))
+        .and_then(Value::as_str)
+        .ok_or("token has no cnf.jkt (not sender-constrained)")?;
+    if bound.is_empty() {
+        return Err("empty cnf.jkt".to_string());
+    }
+    // Constant-time-ish: thumbprints are public, but equal-length compare is fine.
+    if bound == proof_jkt {
+        Ok(())
+    } else {
+        Err("DPoP proof jkt does not match token cnf.jkt".to_string())
+    }
+}
+
 /// Verify a DPoP proof. Returns the `jkt` (thumbprint of the embedded key) which
 /// the caller binds via `cnf.jkt`. `seen_jti(jti)` returns true if the jti was
 /// already used (replay).
@@ -200,6 +228,24 @@ mod tests {
         assert!(verify_dpop(&proof_no_ath, &p, NOW, &mut never).is_err());
         let (proof_ath, _) = make_proof("POST", "https://idp.lifecycle.example/token", NOW, "j2", Some("expected-hash"));
         assert!(verify_dpop(&proof_ath, &p, NOW, &mut never).is_ok());
+    }
+
+    #[test]
+    fn cnf_binding_round_trips_and_fails_closed() {
+        let jkt = "kPrK_qmxVWaYVA9wwBF6Iuo3vVzz7TxHCTwXBygrS4k";
+        // Issuer binds cnf.jkt into the token claims.
+        let token = json!({ "sub": "u-1", "cnf": cnf_claim(jkt) });
+        assert_eq!(token["cnf"]["jkt"], jkt);
+        // Matching proof thumbprint -> bound.
+        assert!(assert_jkt_bound(jkt, &token).is_ok());
+        // Mismatched proof -> rejected.
+        assert!(assert_jkt_bound("different-thumbprint", &token).is_err());
+        // Unbound token (no cnf) -> rejected (fail closed).
+        let unbound = json!({ "sub": "u-1" });
+        assert!(assert_jkt_bound(jkt, &unbound).is_err());
+        // Empty cnf.jkt -> rejected.
+        let empty = json!({ "sub": "u-1", "cnf": { "jkt": "" } });
+        assert!(assert_jkt_bound(jkt, &empty).is_err());
     }
 
     #[test]

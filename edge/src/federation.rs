@@ -2,6 +2,31 @@
 //! actual RS256 signing is done via WebCrypto in `webcrypto_rsa` (Task 5).
 
 use serde_json::{json, Value};
+use subtle::ConstantTimeEq;
+
+/// Authenticate the internal caller of `/federate`. The Go control-plane presents
+/// `Authorization: Bearer <FEDERATION_API_TOKEN>`; the secret is configured as a
+/// Worker secret. FAIL-CLOSED:
+///   - missing/empty configured secret -> false (never default-allow)
+///   - missing/non-Bearer header        -> false
+///   - empty presented token            -> false
+///   - mismatch                         -> false
+/// The comparison is CONSTANT-TIME (subtle::ct_eq) to avoid leaking the secret via
+/// timing. Length is not secret, so a fast length pre-check is fine. Pure +
+/// host-testable; the wasm call site reads `expected` from the Worker secret.
+pub fn caller_is_authorized(auth_header: Option<&str>, expected: &str) -> bool {
+    if expected.is_empty() {
+        return false; // secret not configured -> fail closed, mint nothing
+    }
+    let presented = match auth_header.and_then(|h| h.strip_prefix("Bearer ")) {
+        Some(t) if !t.is_empty() => t,
+        _ => return false,
+    };
+    if presented.len() != expected.len() {
+        return false;
+    }
+    presented.as_bytes().ct_eq(expected.as_bytes()).into()
+}
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum Cloud {
@@ -145,6 +170,28 @@ mod tests {
         assert_eq!(h["alg"], "RS256");
         assert_eq!(h["typ"], "JWT");
         assert_eq!(h["kid"], "cloud-2026-06");
+    }
+
+    #[test]
+    fn federate_caller_auth_fails_closed_without_correct_token() {
+        // No header -> rejected.
+        assert!(!caller_is_authorized(None, "fed-secret"));
+        // Non-Bearer scheme -> rejected.
+        assert!(!caller_is_authorized(Some("Basic fed-secret"), "fed-secret"));
+        // Empty presented token -> rejected.
+        assert!(!caller_is_authorized(Some("Bearer "), "fed-secret"));
+        // Wrong token (same length) -> rejected.
+        assert!(!caller_is_authorized(Some("Bearer fed-secreX"), "fed-secret"));
+        // Wrong token (diff length) -> rejected.
+        assert!(!caller_is_authorized(Some("Bearer nope"), "fed-secret"));
+        // Unconfigured secret must never authenticate, even an empty token.
+        assert!(!caller_is_authorized(Some("Bearer "), ""));
+        assert!(!caller_is_authorized(Some("Bearer anything"), ""));
+    }
+
+    #[test]
+    fn federate_caller_auth_accepts_correct_token() {
+        assert!(caller_is_authorized(Some("Bearer fed-secret"), "fed-secret"));
     }
 
     #[test]

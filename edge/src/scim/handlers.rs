@@ -314,10 +314,12 @@ mod wasm_dispatch {
         let url = req.url()?;
         let mut start = None;
         let mut count = None;
+        let mut filter = None;
         for (k, v) in url.query_pairs() {
             match k.as_ref() {
                 "startIndex" => start = Some(v.to_string()),
                 "count" => count = Some(v.to_string()),
+                "filter" => filter = Some(v.to_string()),
                 _ => {}
             }
         }
@@ -325,10 +327,67 @@ mod wasm_dispatch {
             Ok(p) => p,
             Err(e) => return err_response(&e),
         };
+
+        // I1: apply the SCIM `?filter=` at runtime. Parse + compile to a
+        // PARAMETERIZED where-clause (binds), then run it against D1 so
+        // `userName eq "x"` actually filters instead of returning the whole table.
+        // 400 invalidFilter on parse/compile error (advertised filter.supported=true).
+        if let Some(raw) = filter.as_deref().filter(|s| !s.trim().is_empty()) {
+            let expr = match crate::scim::filter::parse_filter(raw) {
+                Ok(e) => e,
+                Err(e) => return err_response(&e),
+            };
+            let sql = match crate::scim::filter::compile(&expr, USER_FILTER_ALLOW) {
+                Ok(s) => s,
+                Err(e) => return err_response(&e),
+            };
+            return users_list_filtered(env, ctx, &page, &sql).await;
+        }
+
         let mut snap = load_snapshot(env, &ctx.tenant_id).await?;
         let svc = UserService { store: &mut snap, new_id: &new_id, now: &now_iso };
         let (status, body, _) = svc.list(ctx, &page);
         json_response(status, &body)
+    }
+
+    /// Run a compiled, parameterized SCIM filter against D1. Binds: tenant first,
+    /// then the filter's value binds (in order) — never raw input in the SQL text.
+    async fn users_list_filtered(
+        env: &Env,
+        ctx: &TenantCtx,
+        page: &crate::scim::page::Page,
+        sql: &crate::scim::filter::SqlFilter,
+    ) -> worker::Result<Response> {
+        use crate::scim::d1_store::select_by_filter_sql;
+        let (query, _limit, _offset) = select_by_filter_sql(&sql.where_clause, page);
+        let db = env.d1("DB")?;
+        // Bind order: tenant, then each filter value bind.
+        let mut binds: Vec<worker::wasm_bindgen::JsValue> = Vec::with_capacity(1 + sql.binds.len());
+        binds.push(ctx.tenant_id.clone().into());
+        for b in &sql.binds {
+            binds.push(b.clone().into());
+        }
+        let stmt = db.prepare(&query).bind(&binds)?;
+        let result = stmt.all().await?;
+        let rows: Vec<serde_json::Value> = result.results()?;
+        let mut resources = Vec::with_capacity(rows.len());
+        for r in rows {
+            if let Some(body) = r
+                .get("body")
+                .and_then(|b| b.as_str())
+                .and_then(|s| serde_json::from_str::<Value>(s).ok())
+            {
+                resources.push(body);
+            }
+        }
+        let body = serde_json::json!({
+            "schemas": ["urn:ietf:params:scim:api:messages:2.0:ListResponse"],
+            "totalResults": resources.len(),
+            "startIndex": page.start_index,
+            "itemsPerPage": resources.len(),
+            "Resources": resources,
+        });
+        json_response(200, &body)
     }
 
     async fn users_replace(
@@ -423,6 +482,38 @@ mod tests {
         assert_eq!(status, 404);
         assert_eq!(ct, "application/scim+json");
         assert_eq!(body["status"], "404");
+    }
+
+    #[test]
+    fn scim_filter_is_compiled_into_parameterized_where_clause() {
+        // I1: a real Okta/Entra `?filter=userName eq "x"` must become a bound SQL
+        // where-clause (injection-safe), not be ignored. This mirrors the exact
+        // parse->compile->select path the wasm list handler runs.
+        use crate::scim::d1_store::select_by_filter_sql;
+        use crate::scim::filter::{compile, parse_filter};
+        use crate::scim::page::Page;
+
+        let expr = parse_filter("userName eq \"bjensen@example.com\"").unwrap();
+        let sql = compile(&expr, USER_FILTER_ALLOW).unwrap();
+        assert_eq!(sql.where_clause, "user_name = ?");
+        assert_eq!(sql.binds, vec!["bjensen@example.com".to_string()]);
+
+        let page = Page { start_index: 1, count: 50 };
+        let (query, _l, _o) = select_by_filter_sql(&sql.where_clause, &page);
+        assert!(query.contains("WHERE tenant = ? AND (user_name = ?)"));
+
+        // Injection payload lands ONLY in binds, never in the SQL text.
+        let evil = parse_filter("userName eq \"x'; DROP TABLE scim_users;--\"").unwrap();
+        let esql = compile(&evil, USER_FILTER_ALLOW).unwrap();
+        assert_eq!(esql.where_clause, "user_name = ?");
+        assert_eq!(esql.binds[0], "x'; DROP TABLE scim_users;--");
+        let (equery, _, _) = select_by_filter_sql(&esql.where_clause, &page);
+        assert!(!equery.contains("DROP"), "payload must not reach SQL text");
+
+        // Unknown attribute -> invalidFilter 400 (advertised filter.supported).
+        let bad = parse_filter("password eq \"x\"").unwrap();
+        let err = compile(&bad, USER_FILTER_ALLOW).unwrap_err();
+        assert_eq!(err.status, 400);
     }
 
     #[test]
