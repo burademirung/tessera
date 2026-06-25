@@ -1,0 +1,54 @@
+---
+name: OPA / Rego v1 · Regorus
+tagline: Rego v1 policy authored and `opa test`-ed, evaluated at the edge by Microsoft Regorus (pure-Rust Rego), fail-closed.
+order: 60
+requirementKey: opa-rego
+standards:
+  - name: Open Policy Agent / Rego v1 (OPA 1.0)
+    url: https://www.openpolicyagent.org/docs/latest/policy-language/
+  - name: OPA Policy Style Guide
+    url: https://docs.styra.com/opa/rego-style-guide
+  - name: Regorus (Rust-native Rego)
+    url: https://github.com/microsoft/regorus
+codeLang: rego
+codeSample: |
+  # Rego v1: `if` / `contains` mandatory. Default-deny; role-centric RBAC-A
+  # where ABAC may only narrow, never expand.
+  package authz
+
+  default allow := false
+
+  allow if {
+      role_permits
+      every constraint in abac_constraints { constraint }
+  }
+
+  role_permits if {
+      some role in input.subject.roles
+      data.role_permissions[role][input.action][input.resource.type]
+  }
+bestPractices:
+  - claim: Author all policy in Rego v1 (`if`/`contains` mandatory) and gate CI with `opa fmt --rego-v1` then `opa check --strict` then Regal.
+    sourceUrl: https://www.openpolicyagent.org/docs/latest/policy-language/
+  - claim: Default `allow := false` and have the PEP fail closed on any error, timeout, or undefined decision.
+    sourceUrl: https://www.openpolicyagent.org/docs/latest/policy-language/
+  - claim: Evaluate at the edge with Regorus (pure-Rust Rego that compiles to wasm32 and IS the Worker), pinned and gated behind a conformance suite (it is pre-1.0).
+    sourceUrl: https://github.com/microsoft/regorus
+  - claim: Inject time/random/HTTP results as `input`/`data` to keep evaluation deterministic — Regorus does not do network or non-determinism.
+    sourceUrl: https://github.com/microsoft/regorus
+  - claim: Emit decision logs from the Rust host (Regorus has no decision-log plugin), mirroring OPA's event shape with masking before logs leave the Worker.
+    sourceUrl: https://github.com/microsoft/regorus
+---
+
+Policy-as-code in Lifecycle is **authored** as OPA Rego v1 (OPA 1.0, Jan 2025,
+where `if` and `contains` are mandatory) and unit-tested with `opa test`, Regal
+lint, and `conftest` over Terraform plan JSON. But at runtime the edge cannot nest
+OPA-compiled-WASM inside a V8 Worker, so evaluation is done by **Regorus** — a
+pure-Rust Rego interpreter (Microsoft) that compiles to `wasm32` and becomes
+the Worker.
+
+The policy is role-centric **RBAC-A**: a role sets the envelope and ABAC may only
+narrow it. `default allow := false`, and the policy-enforcement point (the edge
+Worker) **fails closed** on any error, timeout, or undefined result. Because
+Regorus has no decision-log plugin, the Rust host emits OPA-shaped decision logs
+with masking applied before anything leaves the edge.

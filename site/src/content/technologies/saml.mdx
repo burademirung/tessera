@@ -1,0 +1,48 @@
+---
+name: SAML 2.0 (brokered)
+tagline: Consumed via a hardened broker, never hand-rolled XML-DSig in WASM — defending against XML Signature Wrapping and parser differentials.
+order: 40
+requirementKey: saml
+standards:
+  - name: OASIS SAML 2.0 Core
+    url: https://docs.oasis-open.org/security/saml/v2.0/saml-core-2.0-os.pdf
+  - name: OWASP SAML Security Cheat Sheet
+    url: https://cheatsheetseries.owasp.org/cheatsheets/SAML_Security_Cheat_Sheet.html
+  - name: NIST SP 800-63C (Federation)
+    url: https://pages.nist.gov/800-63-3/sp800-63c.html
+codeLang: yaml
+codeSample: |
+  # SAML is brokered to OIDC, NOT hand-rolled in WASM (XML-DSig / c14n is
+  # unsafe in WASM and prone to XML Signature Wrapping). A broker terminates
+  # SAML and re-issues OIDC to the edge engine.
+  broker:
+    upstream: okta-saml-app          # SAML SP lives in the broker
+    downstream: oidc                 # edge engine only ever sees OIDC
+    assertion_rules:
+      single_parser: true            # one XML parser end-to-end
+      reject_multiple_assertions: true
+      disable_dtd: true              # XXE off
+      min_signature_alg: RSA-SHA256  # reject SHA-1
+      verify_reference_covers_consumed_assertion: true
+bestPractices:
+  - claim: Do not hand-roll XML-DSig at the edge/WASM — broker SAML to OIDC and keep the Worker out of the XML trust path.
+    sourceUrl: https://cheatsheetseries.owasp.org/cheatsheets/SAML_Security_Cheat_Sheet.html
+  - claim: Defend XML Signature Wrapping — verify the signed `<ds:Reference URI>` covers the exact assertion consumed, and reject more than one assertion.
+    sourceUrl: https://cheatsheetseries.owasp.org/cheatsheets/SAML_Security_Cheat_Sheet.html
+  - claim: Use one XML parser end-to-end and disable DTDs/XXE to avoid parser-differential revival (CVE-2025-25291/25292).
+    sourceUrl: https://cheatsheetseries.owasp.org/cheatsheets/SAML_Security_Cheat_Sheet.html
+  - claim: Validate assertions fail-closed — Conditions, Audience=SP entityID, Recipient=ACS, InResponseTo, one-time IDs; require >=RSA-SHA256.
+    sourceUrl: https://cheatsheetseries.owasp.org/cheatsheets/SAML_Security_Cheat_Sheet.html
+---
+
+SAML 2.0 remains a real enterprise on-ramp, but its XML Signature / canonical-
+ization machinery is hostile to a WASM edge and is the historical home of **XML
+Signature Wrapping** and, more recently, **parser-differential** CVEs
+(CVE-2025-25291/25292). Lifecycle therefore treats SAML as a **brokered legacy
+on-ramp**: a hardened broker (Cloudflare Access / WorkOS / Keycloak) terminates
+SAML and re-issues OIDC, so the edge engine never sits in the XML trust path.
+
+Where SAML is validated, the rules are non-negotiable and fail-closed: one
+parser end-to-end, DTDs disabled, the signed reference must cover the exact
+assertion consumed, multiple assertions rejected, and signatures must be at least
+RSA-SHA256.

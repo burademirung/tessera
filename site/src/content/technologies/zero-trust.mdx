@@ -1,0 +1,51 @@
+---
+name: Zero Trust (NIST SP 800-207)
+tagline: Authorize per request, not per session — the edge is the PEP, Regorus is the PE, the Go control plane is the PA.
+order: 80
+requirementKey: zero-trust
+standards:
+  - name: NIST SP 800-207 (Zero Trust Architecture)
+    url: https://csrc.nist.gov/pubs/sp/800/207/final
+  - name: NIST SP 800-207A (ZT for multi-cloud)
+    url: https://csrc.nist.gov/pubs/sp/800/207/a/final
+  - name: OWASP ASVS v5.0 (V8 Authorization)
+    url: https://owasp.org/www-project-application-security-verification-standard/
+codeLang: rust
+codeSample: |
+  // Zero Trust tenet #3/#6: re-evaluate authorization PER REQUEST with fresh
+  // environment input — never cache an allow decision for the session.
+  async fn handle(req: Request, ctx: Ctx) -> Result<Response> {
+      let input = Input {
+          subject: ctx.session.subject(),          // who, + roles
+          action: req.action(),
+          resource: req.resource(),
+          environment: ctx.fresh_environment(),     // device, time, risk — fresh each call
+      };
+      // PEP = this edge Worker (no policy logic). PE = Regorus bundle.
+      match ctx.regorus.eval_allow(&input).await {
+          Ok(true) => proceed(req).await,
+          _ => Response::forbidden(), // fail closed on deny/error/undefined
+      }
+  }
+bestPractices:
+  - claim: Re-evaluate authorization per request with fresh environment input (tenets #3 and #6) — never cache an allow decision for a session.
+    sourceUrl: https://csrc.nist.gov/pubs/sp/800/207/final
+  - claim: Map the architecture cleanly — PEP = edge Worker (no policy logic), PE = Regorus-evaluated bundle, PA = Go control plane.
+    sourceUrl: https://csrc.nist.gov/pubs/sp/800/207/final
+  - claim: Make authorization decisions server-side only, deny-by-default, with immediate effect on entitlement changes (ASVS V8).
+    sourceUrl: https://owasp.org/www-project-application-security-verification-standard/
+  - claim: Use identity-centric authorization across clouds rather than network location (SP 800-207A).
+    sourceUrl: https://csrc.nist.gov/pubs/sp/800/207/a/final
+---
+
+Zero Trust (NIST SP 800-207) removes implicit trust from the network and makes
+**every request** prove itself. The load-bearing tenet for Lifecycle is
+continuous verification: the engine re-evaluates authorization **per request**
+with a fresh `environment` (device, time, risk) and never caches an allow
+decision for the life of a session.
+
+The architecture maps onto the standard's roles exactly: the **edge Worker is the
+Policy Enforcement Point** and carries no policy logic; the **Regorus-evaluated
+bundle is the Policy Engine**; and the **Go control plane is the Policy
+Administrator** that mints and revokes sessions and signs and pushes policy
+bundles. Decisions are server-side, deny-by-default, and fail closed.
