@@ -1,0 +1,33 @@
+name: terraform
+on:
+  pull_request:
+    paths: ['terraform/**']
+permissions:
+  contents: read
+  id-token: write
+jobs:
+  validate:
+    runs-on: ubuntu-latest
+    environment: demo
+    defaults:
+      run:
+        working-directory: terraform
+    steps:
+      # NOTE: SHA-pin each action before first run (Phase 9 hardens; see research/08).
+      - uses: actions/checkout@v4
+      - uses: hashicorp/setup-terraform@v3
+        with:
+          terraform_version: '1.11.4'
+          terraform_wrapper: false
+      - run: terraform fmt -check -recursive
+      - run: terraform init -backend=false
+      - run: terraform validate
+      - name: trivy config (not tfsec)
+        uses: aquasecurity/trivy-action@v0.24.0
+        with:
+          scan-type: config
+          scan-ref: terraform
+      - name: terraform test (mock_provider, no cloud)
+        run: terraform test
+      - name: conftest guardrail unit tests
+        run: conftest verify --policy policy

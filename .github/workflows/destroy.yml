@@ -1,0 +1,43 @@
+name: destroy
+on:
+  pull_request:
+    types: [closed]
+    paths: ['terraform/**', 'cdk/**']
+permissions:
+  contents: read
+  id-token: write
+concurrency:
+  group: destroy-${{ github.event.pull_request.number }}
+  cancel-in-progress: false # never cancel an in-flight destroy
+jobs:
+  teardown:
+    runs-on: ubuntu-latest
+    environment: demo
+    steps:
+      # NOTE: SHA-pin each action before first run (Phase 9 hardens; see research/08).
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+      - uses: hashicorp/setup-terraform@v3
+        with:
+          terraform_version: '1.11.4'
+          terraform_wrapper: false
+      # OIDC cloud auth steps (configure-aws-credentials / google-github-actions/auth /
+      # azure/login) assume the bootstrap CI deploy identities — wired with the rest of
+      # the hardened pipeline in Phase 9.
+      - name: cdk destroy
+        working-directory: cdk
+        run: |
+          npm ci
+          npx cdk destroy --force
+      - name: terraform destroy
+        working-directory: terraform
+        env:
+          R2_ACCOUNT_ID: ${{ secrets.R2_ACCOUNT_ID }}
+        run: |
+          terraform init \
+            -backend-config="bucket=lifecycle-tfstate" \
+            -backend-config="key=federation/terraform.tfstate" \
+            -backend-config="endpoints={s3=\"https://${R2_ACCOUNT_ID}.r2.cloudflarestorage.com\"}"
+          terraform destroy -auto-approve
