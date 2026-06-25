@@ -1,0 +1,63 @@
+name: nightly
+on:
+  schedule:
+    - cron: '17 3 * * *'   # 03:17 UTC nightly
+  workflow_dispatch:
+permissions:
+  contents: read
+concurrency:
+  group: nightly
+  cancel-in-progress: false
+jobs:
+  drift:
+    runs-on: ubuntu-latest
+    environment: production
+    permissions:
+      id-token: write
+      contents: read
+      issues: write
+    steps:
+      - uses: ./.github/actions/harden-setup
+        with:
+          egress-policy: audit
+          toolchain: terraform
+      - name: AWS OIDC
+        uses: aws-actions/configure-aws-credentials@e3dd6a429d7300a6a4c196c26e071d42e0343502 # v4.0.2
+        with:
+          role-to-assume: ${{ secrets.AWS_ROLE_ARN }}
+          aws-region: ${{ vars.AWS_REGION }}
+          audience: sts.amazonaws.com
+      - name: GCP OIDC
+        uses: google-github-actions/auth@71f986410dfbc7added4569d411d040a91dc6935 # v2.1.8
+        with:
+          workload_identity_provider: ${{ secrets.GCP_WIF_PROVIDER }}
+      - name: Azure OIDC
+        uses: azure/login@a65d910e8af852a8061c627c456678983e180302 # v2.2.0
+        with:
+          client-id: ${{ secrets.AZURE_CLIENT_ID }}
+          tenant-id: ${{ secrets.AZURE_TENANT_ID }}
+          subscription-id: ${{ secrets.AZURE_SUBSCRIPTION_ID }}
+      - name: Terraform drift check
+        id: drift
+        working-directory: terraform
+        run: |
+          terraform init -input=false
+          set +e
+          terraform plan -detailed-exitcode -input=false -var="environment=production"
+          code=$?
+          set -e
+          echo "exitcode=${code}" >> "$GITHUB_OUTPUT"
+          if [ "${code}" = "0" ]; then echo "No drift."; fi
+          if [ "${code}" = "1" ]; then echo "plan errored"; exit 1; fi
+      - name: Open drift issue
+        if: steps.drift.outputs.exitcode == '2'
+        uses: actions/github-script@60a0d83039c74a4aee543508d2ffcb1c3799cdea # v7.0.1
+        with:
+          script: |
+            await github.rest.issues.create({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              title: `Infrastructure drift detected ${new Date().toISOString().slice(0,10)}`,
+              body: 'terraform plan -detailed-exitcode returned 2 (drift). Review and reconcile.',
+              labels: ['drift', 'infra'],
+            });
