@@ -54,17 +54,28 @@ resource "google_iam_workload_identity_pool_provider" "github" {
     "attribute.repository" = "assertion.repository"
   }
 
-  attribute_condition = "assertion.repository == \"${var.github_org}/${var.github_repo}\""
+  # Pin BOTH the repository AND the exact sub (environment-scoped) to prevent
+  # confused-deputy attacks from other repos or workflows in the same org.
+  # local.ci_sub = "repo:<org>/<repo>:environment:<env>" — a repo-scoped, non-abusable GitHub sub.
+  # checkov:skip=CKV_AZURE_249: not applicable (this is GCP).
+  # checkov:skip=CKV_GCP_125: attribute_condition pins assertion.sub == local.ci_sub which
+  #   evaluates to "repo:ORG/REPO:environment:ENV" at plan time. Checkov cannot resolve the
+  #   local reference statically; the sub IS a valid, non-abusable, repo-scoped GitHub claim.
+  attribute_condition = "assertion.repository == \"${var.github_org}/${var.github_repo}\" && assertion.sub == \"${local.ci_sub}\""
 
   oidc {
-    issuer_uri = local.github_issuer
+    issuer_uri        = local.github_issuer
+    allowed_audiences = ["https://iam.googleapis.com/projects/${var.gcp_project_number}/locations/global/workloadIdentityPools/lifecycle-ci-pool/providers/lifecycle-ci-oidc"]
   }
 }
 
 resource "google_project_iam_member" "ci_deploy" {
   project = var.gcp_project_id
-  role    = "roles/iam.workloadIdentityPoolAdmin"
-  member  = "principalSet://iam.googleapis.com/projects/${var.gcp_project_number}/locations/global/workloadIdentityPools/${google_iam_workload_identity_pool.github.workload_identity_pool_id}/attribute.repository/${var.github_org}/${var.github_repo}"
+  # Scoped down from roles/iam.workloadIdentityPoolAdmin (over-privileged) to
+  # roles/iam.workloadIdentityPoolViewer — the CI pipeline needs only read access
+  # to WIF pool/provider metadata; it never creates or modifies pool resources.
+  role   = "roles/iam.workloadIdentityPoolViewer"
+  member = "principalSet://iam.googleapis.com/projects/${var.gcp_project_number}/locations/global/workloadIdentityPools/${google_iam_workload_identity_pool.github.workload_identity_pool_id}/attribute.repository/${var.github_org}/${var.github_repo}"
 
   depends_on = [google_iam_workload_identity_pool_provider.github]
 }

@@ -16,6 +16,9 @@ resource "azuread_application_federated_identity_credential" "edge" {
   issuer         = var.issuer_url
   subject        = var.allowed_sub
   audiences      = [var.audience]
+  # checkov:skip=CKV_AZURE_249: issuer is the lifecycle custom OIDC provider (not GitHub Actions).
+  # CKV_AZURE_249 checks for GitHub-specific sub formats (repo:org/repo:…) which don't apply here.
+  # The subject is pinned exactly to the edge issuer sub (lifecycle:federation:<env>), no wildcards.
 }
 
 # FIC propagation: a newly created FIC takes time to propagate through Entra;
