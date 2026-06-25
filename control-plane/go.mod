@@ -1,3 +1,3 @@
 module github.com/lifecycle/control-plane
 
-go 1.23
+go 1.26

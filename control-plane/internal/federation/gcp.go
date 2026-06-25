@@ -29,6 +29,8 @@ func BuildGCPExchange(providerResource, token string) (GCPExchangeInput, error) 
 	if token == "" {
 		return GCPExchangeInput{}, fmt.Errorf("gcp exchange: empty subject token")
 	}
+	// #nosec G101 -- false positive: these are IETF RFC 8693 token-type URN
+	// protocol constants and an OAuth scope URL, not credentials.
 	return GCPExchangeInput{
 		Audience:           providerResource,
 		SubjectToken:       token,
