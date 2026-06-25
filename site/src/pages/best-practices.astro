@@ -1,0 +1,29 @@
+---
+import Base from '../layouts/Base.astro';
+import BestPracticesList from '../components/BestPracticesList.astro';
+import { getCollection } from 'astro:content';
+
+const techs = (await getCollection('technologies')).sort(
+  (a, b) => a.data.order - b.data.order,
+);
+const total = techs.reduce((n, t) => n + t.data.bestPractices.length, 0);
+---
+<Base title="Best practices we followed — Lifecycle" description="Every best practice applied across the Lifecycle identity engine, grouped by technology, each claim backed by a cited source.">
+  <main>
+    <h1 style="font-size:clamp(1.8rem,4vw,2.6rem); margin-bottom:var(--space-2);">
+      Best practices we followed
+    </h1>
+    <p style="color:var(--color-muted); font-size:1.1rem; max-width:var(--measure);">
+      {total} cited practices across {techs.length} technologies. Every claim
+      links to its authoritative source.
+    </p>
+    {techs.map((t) => (
+      <section style="margin-top:var(--space-5);" aria-labelledby={`bp-${t.data.requirementKey}`}>
+        <h2 id={`bp-${t.data.requirementKey}`} style="font-size:1.3rem;">
+          <a href={`/standards/${t.id}`} style="color:inherit; text-decoration:none;">{t.data.name}</a>
+        </h2>
+        <BestPracticesList items={t.data.bestPractices} />
+      </section>
+    ))}
+  </main>
+</Base>

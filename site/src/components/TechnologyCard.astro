@@ -3,7 +3,7 @@ interface Props { id: string; name: string; tagline: string }
 const { id, name, tagline } = Astro.props;
 ---
 <a class="techcard" href={`/standards/${id}`}>
-  <h3 class="techcard__name">{name}</h3>
+  <p class="techcard__name">{name}</p>
   <p class="techcard__tag">{tagline}</p>
 </a>
 <style>
@@ -15,7 +15,7 @@ const { id, name, tagline } = Astro.props;
     transition: box-shadow var(--dur-standard) var(--ease-standard), transform var(--dur-standard) var(--ease-standard);
   }
   .techcard:hover { box-shadow: var(--shadow-2); transform: translateY(-2px); }
-  .techcard__name { margin: 0 0 var(--space-1); font-size: 1.1rem; }
+  .techcard__name { margin: 0 0 var(--space-1); font-size: 1.1rem; font-weight: 600; }
   .techcard__tag { margin: 0; color: var(--color-muted); font-size: 0.95rem; }
   @media (prefers-reduced-motion: reduce) { .techcard:hover { transform: none; } }
 </style>
