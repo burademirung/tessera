@@ -34,14 +34,26 @@ variables {
   gcp_project_id             = "ident-fed-demo"
   gcp_project_number         = "123456789012"
   cloudflare_account_id      = "0123456789abcdef0123456789abcdef"
+  gcp_pool_id                = "lifecycle-pool"
+  gcp_provider_id            = "lifecycle-oidc"
+  gcp_granted_role           = "roles/storage.objectViewer"
+  azure_role_definition_name = "Reader"
   azure_role_scope           = "/subscriptions/00000000-0000-0000-0000-000000000000"
 }
 
-run "root_plans_clean" {
-  command = plan
-  # The scaffold wires all three modules; a clean plan proves providers + backend wiring parse.
+run "root_wires_all_three_modules_with_exact_sub" {
+  command = apply
+
   assert {
-    condition     = var.allowed_sub == "lifecycle:federation:demo"
-    error_message = "root variables must thread through to the plan"
+    condition     = jsondecode(module.aws_oidc_trust.assume_role_policy_json).Statement[0].Condition.StringEquals["idp.lifecycle.example:sub"] == "lifecycle:federation:demo"
+    error_message = "AWS module must receive the exact root sub"
+  }
+  assert {
+    condition     = strcontains(module.gcp_wif.principal_set, "subject/lifecycle:federation:demo")
+    error_message = "GCP module must receive the exact root sub in its principalSet"
+  }
+  assert {
+    condition     = module.azure_fic.application_client_id != ""
+    error_message = "Azure module must produce an application client id"
   }
 }

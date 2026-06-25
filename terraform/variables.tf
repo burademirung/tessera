@@ -71,3 +71,32 @@ variable "gcp_project_number" {
   type        = string
   description = "GCP project number (used to build the principalSet:// binding)."
 }
+
+variable "gcp_pool_id" {
+  type        = string
+  description = "GCP Workload Identity Pool id."
+  default     = "lifecycle-pool"
+}
+
+variable "gcp_provider_id" {
+  type        = string
+  description = "GCP WIF OIDC provider id."
+  default     = "lifecycle-oidc"
+}
+
+variable "gcp_granted_role" {
+  type        = string
+  description = "Project role granted directly to the GCP principalSet."
+  default     = "roles/storage.objectViewer"
+}
+
+variable "azure_role_definition_name" {
+  type        = string
+  description = "Azure role assigned to the federation service principal."
+  default     = "Reader"
+}
+
+variable "azure_role_scope" {
+  type        = string
+  description = "Scope of the Azure role assignment."
+}
