@@ -10,6 +10,7 @@ jobs:
   site:
     runs-on: ubuntu-latest
     steps:
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
       - uses: ./.github/actions/harden-setup
         with:
           egress-policy: audit
@@ -21,6 +22,7 @@ jobs:
   rust-edge:
     runs-on: ubuntu-latest
     steps:
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
       - uses: ./.github/actions/harden-setup
         with:
           egress-policy: audit
@@ -41,6 +43,7 @@ jobs:
   go-control-plane:
     runs-on: ubuntu-latest
     steps:
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
       - uses: ./.github/actions/harden-setup
         with:
           egress-policy: audit
@@ -68,6 +71,7 @@ jobs:
     env:
       PR_NUMBER: ${{ github.event.number }}
     steps:
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
       - uses: ./.github/actions/harden-setup
         with:
           egress-policy: audit
@@ -116,6 +120,7 @@ jobs:
   cdk-nag:
     runs-on: ubuntu-latest
     steps:
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
       - uses: ./.github/actions/harden-setup
         with:
           egress-policy: audit
@@ -129,6 +134,7 @@ jobs:
   sbom-scan:
     runs-on: ubuntu-latest
     steps:
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
       - uses: ./.github/actions/harden-setup
         with:
           egress-policy: audit
@@ -154,6 +160,7 @@ jobs:
   gitleaks:
     runs-on: ubuntu-latest
     steps:
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
       - uses: ./.github/actions/harden-setup
         with:
           egress-policy: audit

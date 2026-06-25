@@ -21,6 +21,7 @@ jobs:
       PR_NUMBER: ${{ github.event.number }}
       PR_HEAD_REF: ${{ github.event.pull_request.head.ref }}   # routed via env (untrusted)
     steps:
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
       - uses: ./.github/actions/harden-setup
         with:
           egress-policy: audit
