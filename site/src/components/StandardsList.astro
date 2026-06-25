@@ -23,12 +23,13 @@ const { standards } = Astro.props;
   }
   .standards__row:first-child { padding-top: 0; }
   .standards dt { font-weight: 600; display: flex; flex-wrap: wrap; align-items: baseline; gap: 8px; }
-  /* RFC tag — mono, gold standard-token marker */
+  /* RFC tag — mono standard-token. Gold is decorative only (left rule);
+     the text itself uses ink to stay WCAG AA (gold fails as small text). */
   .standards__rfc {
     font-family: var(--font-mono); font-size: 0.72rem; font-weight: 500;
-    letter-spacing: 0.02em; color: var(--gold);
-    border: 1px solid var(--line); border-radius: var(--radius-sm);
-    padding: 1px 7px; background: var(--gold-soft);
+    letter-spacing: 0.02em; color: var(--ink);
+    border: 1px solid var(--line); border-left: 3px solid var(--gold);
+    border-radius: var(--radius-sm); padding: 1px 7px; background: var(--paper);
   }
   .standards dd { margin: 0; }
   .standards a { color: var(--lapis); word-break: break-all; font-size: 0.86rem; }

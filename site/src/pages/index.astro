@@ -662,7 +662,8 @@ const standardsGroups = [
     .stdtable__head { color: var(--muted); font-family: var(--font-mono); font-size: 0.7rem; text-transform: uppercase; letter-spacing: 0.08em; }
     .stdtable__row:last-child { border-bottom: 0; }
     .stdtable__name { font-weight: 600; font-size: 0.95rem; display: flex; flex-wrap: wrap; align-items: baseline; gap: 7px; }
-    .stdtag { color: var(--gold); border: 1px solid var(--line); background: var(--gold-soft); border-radius: var(--radius-sm); padding: 1px 6px; font-size: 0.68rem; }
+    /* Gold is decorative (left rule) only; tag text is ink for WCAG AA. */
+    .stdtag { color: var(--ink); border: 1px solid var(--line); border-left: 3px solid var(--gold); background: var(--paper); border-radius: var(--radius-sm); padding: 1px 6px; font-size: 0.68rem; }
     .stdtable__gov { color: var(--muted); font-size: 0.9rem; line-height: 1.45; }
     .stdtable__where { color: var(--lapis); font-size: 0.74rem; word-break: break-word; }
     @media (max-width: 720px) {
@@ -687,12 +688,14 @@ const standardsGroups = [
     @media (prefers-reduced-motion: no-preference) {
       .reveal { opacity: 0; transform: translateY(14px); transition: opacity 600ms var(--ease-standard), transform 600ms var(--ease-standard); }
       .reveal.is-in { opacity: 1; transform: none; }
-      /* Hero copy fades up on load — never touches the graph/LCP poster. */
-      .hero__load > * { opacity: 0; transform: translateY(10px); animation: heroIn 640ms var(--ease-standard) forwards; }
-      .hero__load > :nth-child(1) { animation-delay: 60ms; }
-      .hero__load > :nth-child(2) { animation-delay: 140ms; }
-      .hero__load > :nth-child(3) { animation-delay: 220ms; }
-      .hero__load > :nth-child(4) { animation-delay: 300ms; }
+      /* Hero copy fades up on load — never touches the graph/LCP poster.
+         Kept short (≤ ~360ms total) so it never leaves interactive controls
+         at a reduced opacity that would fail a color-contrast audit. */
+      .hero__load > * { opacity: 0; transform: translateY(8px); animation: heroIn 300ms var(--ease-standard) forwards; }
+      .hero__load > :nth-child(1) { animation-delay: 20ms; }
+      .hero__load > :nth-child(2) { animation-delay: 50ms; }
+      .hero__load > :nth-child(3) { animation-delay: 80ms; }
+      .hero__load > :nth-child(4) { animation-delay: 110ms; }
       @keyframes heroIn { to { opacity: 1; transform: none; } }
     }
   </style>

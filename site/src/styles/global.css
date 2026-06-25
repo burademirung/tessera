@@ -13,30 +13,20 @@ body {
   margin: 0;
   background-color: var(--paper);
   /* Tessellation motif: a faint mosaic tile grid woven into the limestone.
-     Two offset hairline grids = the through-line, kept very quiet. */
+     One quiet hairline grid = the through-line. (Self-critique: dropped the
+     second softening overlay layer; a low-contrast grout line carries it,
+     and avoids a fixed full-page repaint on scroll.) */
   background-image:
-    linear-gradient(var(--line) 1px, transparent 1px),
-    linear-gradient(90deg, var(--line) 1px, transparent 1px);
+    linear-gradient(color-mix(in srgb, var(--line) 55%, transparent) 1px, transparent 1px),
+    linear-gradient(90deg, color-mix(in srgb, var(--line) 55%, transparent) 1px, transparent 1px);
   background-size: 48px 48px, 48px 48px;
   background-position: -1px -1px, -1px -1px;
-  background-attachment: fixed;
   color: var(--ink);
   font-family: var(--font-sans);
   font-size: 17px;
   line-height: 1.6;
   -webkit-font-smoothing: antialiased;
   text-rendering: optimizeLegibility;
-}
-
-/* Soften the grid so it reads as substrate, not a wireframe. */
-body::before {
-  content: '';
-  position: fixed;
-  inset: 0;
-  background: var(--paper);
-  opacity: 0.55;
-  pointer-events: none;
-  z-index: -1;
 }
 
 h1, h2, h3 { font-family: var(--font-display); font-weight: 480; letter-spacing: -0.012em; line-height: 1.1; }
@@ -51,15 +41,28 @@ a:hover { color: var(--lapis-700); }
 
 .wrap { max-width: var(--measure-page); margin: 0 auto; padding-inline: clamp(20px, 5vw, 40px); }
 
-/* Eyebrow — the "standards / machine" mono voice */
+/* Eyebrow — the "standards / machine" mono voice. Text is muted (WCAG AA);
+   the gold accent is carried decoratively by a leading tessera tile, so gold
+   is never used as small text. */
 .eyebrow {
   font-family: var(--font-mono);
   font-size: 0.78rem;
   letter-spacing: 0.18em;
   text-transform: uppercase;
-  color: var(--gold);
+  color: var(--muted);
   margin: 0;
   font-weight: 500;
+  display: inline-flex;
+  align-items: center;
+  gap: 9px;
+}
+.eyebrow::before {
+  content: '';
+  width: 8px; height: 8px;
+  background: var(--gold);
+  border-radius: 2px;
+  transform: rotate(45deg);
+  flex: none;
 }
 
 /* Tessellated hairline divider — a row of grout-edged glass tiles */

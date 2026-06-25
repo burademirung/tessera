@@ -11,7 +11,7 @@ test.describe('live telemetry', () => {
       route.fulfill({ status: 200, contentType: 'text/event-stream', body: SSE_BODY }),
     );
     await page.goto('/');
-    await expect(page.getByRole('cell', { name: /STS exchange/i })).toBeVisible();
+    await expect(page.getByRole('cell', { name: /STS exchange/i }).first()).toBeVisible();
   });
 
   test('Pause stops live updates', async ({ page }) => {
@@ -19,8 +19,8 @@ test.describe('live telemetry', () => {
       route.fulfill({ status: 200, contentType: 'text/event-stream', body: SSE_BODY }),
     );
     await page.goto('/');
-    await page.getByRole('button', { name: /pause live telemetry/i }).click();
-    await expect(page.getByRole('button', { name: /resume live telemetry/i })).toBeVisible();
+    await page.getByRole('button', { name: /pause live telemetry/i }).first().click();
+    await expect(page.getByRole('button', { name: /resume live telemetry/i }).first()).toBeVisible();
   });
 
   test('Run the demo POSTs the demo trigger', async ({ page }) => {
@@ -33,7 +33,7 @@ test.describe('live telemetry', () => {
       route.fulfill({ status: 200, contentType: 'text/event-stream', body: SSE_BODY }),
     );
     await page.goto('/');
-    await page.getByRole('button', { name: /run the demo/i }).click();
+    await page.getByRole('button', { name: /run the demo/i }).first().click();
     await expect.poll(() => posted).toBe(true);
   });
 
@@ -46,7 +46,7 @@ test.describe('live telemetry', () => {
       return route.abort();
     });
     await page.goto('/');
-    await expect(page.getByAltText(/identity flow graph \(static/i)).toBeVisible();
+    await expect(page.getByAltText(/identity flow graph \(static/i).first()).toBeVisible();
     await page.waitForTimeout(500);
     expect(opened).toBe(false);
     await context.close();

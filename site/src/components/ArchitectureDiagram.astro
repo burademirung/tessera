@@ -63,10 +63,11 @@ const resources = [
     background: linear-gradient(var(--lapis), transparent);
   }
   .arch__layer:last-child::before { display: none; }
+  /* Ink number for AA; the gold ring/border carries the mosaic accent. */
   .arch__num {
-    flex: none; font-family: var(--font-mono); font-size: 0.82rem; font-weight: 500;
-    color: var(--gold); width: 32px; height: 32px; display: grid; place-items: center;
-    border: 1px solid var(--gold); border-radius: 6px; background: var(--gold-soft);
+    flex: none; font-family: var(--font-mono); font-size: 0.82rem; font-weight: 600;
+    color: var(--ink); width: 32px; height: 32px; display: grid; place-items: center;
+    border: 1.5px solid var(--gold); border-radius: 6px; background: var(--paper);
   }
   .arch__layerhead { display: flex; flex-wrap: wrap; align-items: baseline; gap: 10px; }
   .arch__name { font-size: 1.05rem; margin: 0; }
