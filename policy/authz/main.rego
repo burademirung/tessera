@@ -14,8 +14,9 @@ allow if {
 	abac_ok
 }
 
-# Placeholders replaced with real logic in Tasks 2 and 3.
-# Until then they are deliberately undefined so `allow` stays false.
+# role_permits is defined in rbac.rego (Task 2); the default keeps it a total
+# function so tests can bind `got := role_permits` even when no permission matches.
 default role_permits := false
 
+# abac_ok is defined in abac.rego (Task 3).
 default abac_ok := false

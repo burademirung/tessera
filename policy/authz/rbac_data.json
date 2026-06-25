@@ -1,0 +1,42 @@
+{
+	"rbac": {
+		"roles": {
+			"reader": {
+				"inherits": [],
+				"permissions": [
+					{"resource": "user", "action": "read"},
+					{"resource": "group", "action": "read"}
+				]
+			},
+			"helpdesk": {
+				"inherits": ["reader"],
+				"permissions": [
+					{"resource": "user", "action": "update"},
+					{"resource": "session", "action": "read"}
+				]
+			},
+			"provisioner": {
+				"inherits": ["reader"],
+				"permissions": [
+					{"resource": "user", "action": "create"},
+					{"resource": "user", "action": "update"},
+					{"resource": "group", "action": "update"}
+				]
+			},
+			"approver": {
+				"inherits": ["reader"],
+				"permissions": [
+					{"resource": "access_request", "action": "approve"}
+				]
+			},
+			"admin": {
+				"inherits": ["helpdesk", "provisioner", "approver"],
+				"permissions": [
+					{"resource": "user", "action": "delete"},
+					{"resource": "session", "action": "revoke"},
+					{"resource": "policy", "action": "update"}
+				]
+			}
+		}
+	}
+}
