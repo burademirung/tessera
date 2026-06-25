@@ -11,6 +11,7 @@ pub mod rp;
 pub mod scim;
 pub mod session;
 pub mod ssrf;
+pub mod telemetry;
 pub mod util;
 
 #[cfg(target_arch = "wasm32")]
