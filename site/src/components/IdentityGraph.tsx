@@ -1,6 +1,7 @@
 import { lazy, Suspense, useEffect, useRef, useState } from 'react';
 import { FlowGraphSvg } from './FlowGraphSvg';
 import { TelemetryTable } from './TelemetryTable';
+import { RunDemoButton } from './RunDemoButton';
 import {
   decideRenderMode,
   initialRenderMode,
@@ -97,6 +98,7 @@ export function IdentityGraph({ posterSrc }: { posterSrc: string }) {
           <button type="button" onClick={() => setPaused(!paused)} aria-pressed={paused}>
             {paused ? 'Resume live telemetry' : 'Pause live telemetry'}
           </button>
+          <RunDemoButton />
         </div>
       )}
       {live && <TelemetryTable />}
