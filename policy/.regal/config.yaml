@@ -1,0 +1,28 @@
+rules:
+  idiomatic:
+    # Test files use `package authz_test` (and iac_test) co-located with the
+    # package under test in authz/ and iac/. Regal 0.41 flags this; the layout
+    # is intentional (tests next to sources), so this idiomatic rule is ignored.
+    directory-package-mismatch:
+      level: ignore
+  style:
+    line-length:
+      level: warning
+      max-line-length: 160
+    prefer-snake-case:
+      level: error
+  bugs:
+    rule-shadows-builtin:
+      level: error
+    unused-output-variable:
+      level: error
+  imports:
+    # `with data.rbac as {}` etc. in tests mock data documents that are loaded
+    # at runtime (or via the conformance dir), not present at lint time. These
+    # are intentional test mocks, not real unresolved references.
+    unresolved-reference:
+      level: ignore
+capabilities:
+  from:
+    engine: opa
+    version: v1.4.0
