@@ -16,3 +16,4 @@ cdk/node_modules/
 cdk/cdk.out/
 **/.terraform/
 control-plane/**/*.test
+edge/tests/fixtures/seed.hex

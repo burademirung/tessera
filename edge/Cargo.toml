@@ -32,6 +32,14 @@ serde_json = "1"
 getrandom = { version = "0.3", features = ["wasm_js"] }
 # Constant-time equality for the SCIM bearer secret comparison (builds on wasm32).
 subtle = { version = "2.6", default-features = false }
+# Trimmed Regorus: default-features off + only the builtins the authz policy uses.
+# `graph` is required by `graph.reachable` (RBAC inheritance closure) — the
+# conformance harness proved the arc/regex/semver-only set diverged from OPA on it.
+# No time/rand/http/net (determinism: current time + posture arrive via `input`).
+regorus = { version = "0.10", default-features = false, features = ["arc", "regex", "semver", "graph"] }
+
+[dev-dependencies]
+serde = { version = "1", features = ["derive"] }
 
 [profile.release]
 opt-level = "z"
