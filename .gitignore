@@ -17,3 +17,5 @@ cdk/cdk.out/
 **/.terraform/
 control-plane/**/*.test
 edge/tests/fixtures/seed.hex
+sbom.cdx.json
+sbom.spdx.json

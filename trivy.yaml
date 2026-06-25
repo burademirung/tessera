@@ -1,0 +1,11 @@
+severity:
+  - HIGH
+  - CRITICAL
+exit-code: 1
+misconfiguration:
+  include-non-failures: false
+scan:
+  scanners:
+    - misconfig
+    - vuln
+    - secret
