@@ -17,13 +17,16 @@ type CadencePolicy struct {
 }
 
 // DueForReview reports whether an identity at a given tier is due, per cadence.
+// An unknown or undefined tier is treated as due (fail closed): the identity
+// must be reviewed rather than silently skipped.
 func DueForReview(_ domain.Identity, tier domain.RiskTier, lastReviewed time.Time, policy []CadencePolicy, now time.Time) bool {
 	for _, p := range policy {
 		if p.Tier == tier {
 			return now.Sub(lastReviewed) >= p.Interval
 		}
 	}
-	return false
+	// Unknown tier: fail closed — treat as due for review.
+	return true
 }
 
 // ReviewItem is one entitlement to certify, pre-populated with a recommendation.
@@ -42,12 +45,21 @@ func BuildItems(i domain.Identity, reviewerFor func(domain.Entitlement) string, 
 	var items []ReviewItem
 	for _, e := range i.Entitlements {
 		reviewer := reviewerFor(e)
+		// Fail closed: an empty/unresolved reviewer means no one is assigned —
+		// the entitlement would never be certified.  Reject it explicitly.
+		if reviewer == "" {
+			return nil, fmt.Errorf("reviewer is unresolved (empty) for entitlement %s (fail closed)", e.ID)
+		}
+		// Separation of Duties: reviewer must differ from the grantor.
 		if reviewer == e.GrantedBy {
 			return nil, fmt.Errorf("reviewer %q equals grantor for entitlement %s (reviewer must differ from grantor)", reviewer, e.ID)
 		}
-		rec := "keep"
-		if e.LastUsed == nil || now.Sub(*e.LastUsed) > staleAfter {
-			rec = "revoke"
+		// Least privilege: default to revoke; keeping requires the entitlement
+		// to have been used more recently than the stale threshold.
+		// Use >= so that "exactly at the boundary" is also treated as stale.
+		rec := "revoke"
+		if e.LastUsed != nil && now.Sub(*e.LastUsed) < staleAfter {
+			rec = "keep"
 		}
 		items = append(items, ReviewItem{
 			IdentityID:     i.ID,
@@ -76,7 +88,12 @@ func Batch(items []ReviewItem, perReviewer int) map[string][][]ReviewItem {
 			if end > len(rs) {
 				end = len(rs)
 			}
-			out[reviewer] = append(out[reviewer], rs[start:end])
+			// Copy the slice to avoid shared backing array across batches.
+			// Without this, appending to one batch's sub-slice can silently
+			// overwrite items in the next batch (state drift).
+			batch := make([]ReviewItem, end-start)
+			copy(batch, rs[start:end])
+			out[reviewer] = append(out[reviewer], batch)
 		}
 	}
 	return out
