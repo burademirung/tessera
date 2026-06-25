@@ -3,6 +3,7 @@ pub mod federation;
 pub mod internal_token;
 pub mod jwks;
 pub mod jwt;
+pub mod rp;
 pub mod util;
 
 #[cfg(target_arch = "wasm32")]
