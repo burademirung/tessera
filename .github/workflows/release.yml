@@ -15,6 +15,7 @@ jobs:
     outputs:
       wasm-digest: ${{ steps.digest.outputs.wasm }}
     steps:
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
       - uses: ./.github/actions/harden-setup
         with:
           egress-policy: audit
@@ -62,6 +63,7 @@ jobs:
     permissions:
       contents: read   # gh attestation verify needs only GH_TOKEN + contents:read (no id-token)
     steps:
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
       - uses: ./.github/actions/harden-setup
         with:
           egress-policy: audit
@@ -90,6 +92,7 @@ jobs:
       id-token: write
       contents: read
     steps:
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
       - uses: ./.github/actions/harden-setup
         with:
           egress-policy: audit
