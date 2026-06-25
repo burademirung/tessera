@@ -7,11 +7,25 @@
   },
   "durable_objects": {
     "bindings": [
+      // Phase-2 (existing) — DO NOT remove.
       { "name": "SESSIONS", "class_name": "SessionStore" }
+      // Phase-3 SCIM_VERSIONS (per-tenant monotonic version/ETag counter) is
+      // deferred until the Phase-2 DO seam is finalized; the per-resource
+      // `version` column in scim_users currently advances ETags monotonically.
     ]
   },
   "migrations": [
+    // Phase-2 tag is frozen; never edit it.
     { "tag": "v1", "new_sqlite_classes": ["SessionStore"] }
+  ],
+  // Phase-3: D1 relational store for SCIM Users/Groups (migrations in ./migrations).
+  "d1_databases": [
+    {
+      "binding": "DB",
+      "database_name": "lifecycle",
+      "database_id": "PLACEHOLDER_REPLACE_BEFORE_DEPLOY",
+      "migrations_dir": "migrations"
+    }
   ],
   "kv_namespaces": [
     { "binding": "JWKS_CACHE", "id": "PLACEHOLDER_REPLACE_BEFORE_DEPLOY" }

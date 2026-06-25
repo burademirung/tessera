@@ -8,6 +8,7 @@ pub mod introspect;
 pub mod jwks;
 pub mod jwt;
 pub mod rp;
+pub mod scim;
 pub mod session;
 pub mod ssrf;
 pub mod util;
@@ -51,6 +52,10 @@ mod worker_entry {
     #[event(fetch)]
     async fn fetch(mut req: Request, env: Env, _ctx: Context) -> Result<Response> {
         let path = req.path();
+        // Phase-3: SCIM 2.0 service provider mounted additively under /scim/v2.
+        if path.starts_with("/scim/v2") {
+            return scim::router::handle(req, env).await;
+        }
         match (req.method(), path.as_str()) {
             (Method::Get, "/.well-known/openid-configuration") => {
                 let cfg = discovery::IssuerConfig { issuer: ISSUER.to_string() };

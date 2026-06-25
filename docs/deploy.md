@@ -18,3 +18,13 @@ Manual deploy (local). Project name and output dir come from `site/wrangler.json
 
     pnpm --dir site build
     pnpm --dir site exec wrangler pages deploy
+
+## SCIM validators (manual gate, no API)
+
+Before tagging a SCIM release, run the hosted validators against a preview deploy:
+- Microsoft SCIM Validator — https://scimvalidator.microsoft.com/ (manual).
+- Okta SCIM 2.0 Test App + Runscope `Okta-SCIM-20-CRUD-Test.json`.
+
+The automated `scim-conformance` job replays the verbatim Okta + both Entra dialect
+payloads and asserts the status-code matrix; the hosted validators are the
+belt-and-suspenders manual sign-off.

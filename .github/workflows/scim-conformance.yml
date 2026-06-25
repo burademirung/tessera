@@ -1,0 +1,23 @@
+name: scim-conformance
+on:
+  push:
+    paths: ['edge/**', '.github/workflows/scim-conformance.yml']
+  pull_request:
+    paths: ['edge/**']
+permissions:
+  contents: read
+jobs:
+  conformance:
+    runs-on: ubuntu-latest
+    steps:
+      # NOTE: SHA-pin each action before first run (Phase 9 hardens; see research/08).
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: wasm32-unknown-unknown
+      - name: Unit tests (pure SCIM logic, host target)
+        run: cargo test --manifest-path edge/Cargo.toml scim::
+      - name: SCIM conformance matrix (verbatim Okta + both Entra dialects)
+        run: cargo test --manifest-path edge/Cargo.toml --test conformance
+      - name: WASM build stays clean
+        run: cargo build --manifest-path edge/Cargo.toml --target wasm32-unknown-unknown
