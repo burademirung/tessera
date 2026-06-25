@@ -4,13 +4,18 @@ on:
     paths: ['terraform/**', 'bootstrap/**']
 permissions:
   contents: read
+concurrency:
+  group: infracost-${{ github.ref }}
+  cancel-in-progress: true
 jobs:
   cost:
     runs-on: ubuntu-latest
     steps:
-      # NOTE: SHA-pin each action before first run (Phase 9 hardens; see research/08).
-      - uses: actions/checkout@v4
-      - uses: infracost/actions/setup@v3
+      - uses: ./.github/actions/harden-setup
+        with:
+          egress-policy: audit
+      - name: Setup Infracost
+        uses: infracost/actions/setup@e9d6e6cd65e168e76b0de50ff9957d2fe8bb1832 # v3
         with:
           api-key: ${{ secrets.INFRACOST_API_KEY }}
       - name: Generate breakdown

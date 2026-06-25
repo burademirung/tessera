@@ -4,29 +4,49 @@ on:
     paths: ['terraform/**']
 permissions:
   contents: read
-  id-token: write
+concurrency:
+  group: terraform-${{ github.ref }}
+  cancel-in-progress: true   # plan only — safe to cancel
 jobs:
   validate:
     runs-on: ubuntu-latest
-    environment: demo
+    environment: production
+    permissions:
+      id-token: write
+      contents: read
     defaults:
       run:
         working-directory: terraform
     steps:
-      # NOTE: SHA-pin each action before first run (Phase 9 hardens; see research/08).
-      - uses: actions/checkout@v4
-      - uses: hashicorp/setup-terraform@v3
+      - uses: ./.github/actions/harden-setup
         with:
-          terraform_version: '1.11.4'
-          terraform_wrapper: false
+          egress-policy: audit
+          toolchain: terraform
+      - name: AWS OIDC
+        uses: aws-actions/configure-aws-credentials@e3dd6a429d7300a6a4c196c26e071d42e0343502 # v4.0.2
+        with:
+          role-to-assume: ${{ secrets.AWS_ROLE_ARN }}
+          aws-region: ${{ vars.AWS_REGION }}
+          audience: sts.amazonaws.com
+      - name: GCP OIDC
+        uses: google-github-actions/auth@71f986410dfbc7added4569d411d040a91dc6935 # v2.1.8
+        with:
+          workload_identity_provider: ${{ secrets.GCP_WIF_PROVIDER }}
+      - name: Azure OIDC
+        uses: azure/login@a65d910e8af852a8061c627c456678983e180302 # v2.2.0
+        with:
+          client-id: ${{ secrets.AZURE_CLIENT_ID }}
+          tenant-id: ${{ secrets.AZURE_TENANT_ID }}
+          subscription-id: ${{ secrets.AZURE_SUBSCRIPTION_ID }}
       - run: terraform fmt -check -recursive
       - run: terraform init -backend=false
       - run: terraform validate
-      - name: trivy config (not tfsec)
-        uses: aquasecurity/trivy-action@v0.24.0
+      - name: trivy config (IaC misconfig)
+        uses: aquasecurity/trivy-action@18f2510ee396bbf400402947b394f2dd8c87dbb0 # 0.29.0
         with:
           scan-type: config
           scan-ref: terraform
+          trivy-config: trivy.yaml
       - name: terraform test (mock_provider, no cloud)
         run: terraform test
       - name: conftest guardrail unit tests

@@ -4,6 +4,9 @@ on:
     paths: ['cdk/**']
 permissions:
   contents: read
+concurrency:
+  group: cdk-${{ github.ref }}
+  cancel-in-progress: true
 jobs:
   validate:
     runs-on: ubuntu-latest
@@ -11,11 +14,10 @@ jobs:
       run:
         working-directory: cdk
     steps:
-      # NOTE: SHA-pin each action before first run (Phase 9 hardens; see research/08).
-      - uses: actions/checkout@v4
-      - uses: actions/setup-node@v4
+      - uses: ./.github/actions/harden-setup
         with:
-          node-version: '20'
+          egress-policy: audit
+          toolchain: node
       - run: npm ci
       - run: npm test
       - name: cdk synth (cdk-nag gates)

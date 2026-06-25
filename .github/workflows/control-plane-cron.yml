@@ -21,24 +21,46 @@ on:
         default: false
 permissions:
   contents: read
-  id-token: write              # keyless OIDC to AWS/GCP/Azure
+concurrency:
+  group: control-plane-cron
+  cancel-in-progress: false   # never cancel an in-flight cron run
 jobs:
   run:
     runs-on: ubuntu-latest
     environment: production     # OIDC sub pins to this environment
+    permissions:
+      id-token: write           # keyless OIDC to AWS/GCP/Azure
+      contents: read
+    env:
+      MODE: ${{ github.event.inputs.mode }}
+      USER_ID: ${{ github.event.inputs.user }}
+      APPS: ${{ github.event.inputs.apps }}
+      FOR_CAUSE: ${{ github.event.inputs.for_cause }}
     defaults:
       run:
         working-directory: control-plane
     steps:
-      # NOTE: Phase 9 hardens this — replace each @<tag> with a pinned commit SHA,
-      # add step-security/harden-runner as the first step, and add per-cloud OIDC
-      # login actions (aws-actions/configure-aws-credentials,
-      # google-github-actions/auth, azure/login), all SHA-pinned.
-      - uses: actions/checkout@v4
-      - uses: actions/setup-go@v5
+      - uses: ./.github/actions/harden-setup
         with:
-          go-version: '1.23'
-          cache-dependency-path: control-plane/go.sum
+          egress-policy: audit
+          toolchain: go
+          working-directory: control-plane
+      - name: AWS OIDC
+        uses: aws-actions/configure-aws-credentials@e3dd6a429d7300a6a4c196c26e071d42e0343502 # v4.0.2
+        with:
+          role-to-assume: ${{ secrets.AWS_ROLE_ARN }}
+          aws-region: ${{ vars.AWS_REGION }}
+          audience: sts.amazonaws.com
+      - name: GCP OIDC
+        uses: google-github-actions/auth@71f986410dfbc7added4569d411d040a91dc6935 # v2.1.8
+        with:
+          workload_identity_provider: ${{ secrets.GCP_WIF_PROVIDER }}
+      - name: Azure OIDC
+        uses: azure/login@a65d910e8af852a8061c627c456678983e180302 # v2.2.0
+        with:
+          client-id: ${{ secrets.AZURE_CLIENT_ID }}
+          tenant-id: ${{ secrets.AZURE_TENANT_ID }}
+          subscription-id: ${{ secrets.AZURE_SUBSCRIPTION_ID }}
       - name: vet + test
         run: |
           go vet ./...
@@ -64,8 +86,3 @@ jobs:
           else
             ./access-review -mode access-review
           fi
-        env:
-          MODE: ${{ github.event.inputs.mode }}
-          USER_ID: ${{ github.event.inputs.user }}
-          APPS: ${{ github.event.inputs.apps }}
-          FOR_CAUSE: ${{ github.event.inputs.for_cause }}

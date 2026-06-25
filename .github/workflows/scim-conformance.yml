@@ -6,17 +6,20 @@ on:
     paths: ['edge/**']
 permissions:
   contents: read
+concurrency:
+  group: scim-conformance-${{ github.ref }}
+  cancel-in-progress: true
 jobs:
   conformance:
     runs-on: ubuntu-latest
     steps:
-      # NOTE: SHA-pin each action before first run (Phase 9 hardens; see research/08).
-      - uses: actions/checkout@v4
-      - uses: dtolnay/rust-toolchain@stable
+      - uses: ./.github/actions/harden-setup
         with:
-          targets: wasm32-unknown-unknown
+          egress-policy: audit
+          toolchain: rust
+          working-directory: edge
       - name: Unit tests (pure SCIM logic, host target)
-        run: cargo test --manifest-path edge/Cargo.toml scim::
+        run: cargo test --manifest-path edge/Cargo.toml 'scim::'
       - name: SCIM conformance matrix (verbatim Okta + both Entra dialects)
         run: cargo test --manifest-path edge/Cargo.toml --test conformance
       - name: WASM build stays clean
