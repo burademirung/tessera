@@ -1,0 +1,50 @@
+---
+name: Rust (edge engine to WASM)
+tagline: The identity engine compiled to wasm32 on Cloudflare Workers — pure-Rust crypto, WebCrypto for RSA, randomness wired to crypto.getRandomValues.
+order: 100
+requirementKey: rust
+standards:
+  - name: workers-rs (Cloudflare Rust on Workers)
+    url: https://developers.cloudflare.com/workers/languages/rust/
+  - name: RustSec Advisory RUSTSEC-2023-0071 (RSA Marvin)
+    url: https://rustsec.org/advisories/RUSTSEC-2023-0071.html
+  - name: JWK Thumbprint
+    rfc: RFC 7638
+    url: https://www.rfc-editor.org/rfc/rfc7638
+codeLang: toml
+codeSample: |
+  # wasm32-unknown-unknown: C/asm crypto won't build (no ring/openssl).
+  # Randomness MUST be wired: feature `wasm_js` AND the rustflag below.
+  [dependencies]
+  worker = { version = "0.8", features = ["http", "d1"] }
+  jsonwebtoken = { version = "10.4", default-features = false, features = ["use_pem", "rust_crypto"] }
+  ed25519-dalek = { version = "2.2", default-features = false, features = ["rand_core", "pkcs8", "zeroize"] }
+  regorus = { version = "0.10", default-features = false, features = ["arc", "regex", "semver"] }
+  getrandom = { version = "0.3", features = ["wasm_js"] }
+  # .cargo/config.toml => [target.wasm32-unknown-unknown]
+  #   rustflags = ['--cfg', 'getrandom_backend="wasm_js"']
+bestPractices:
+  - claim: Target wasm32-unknown-unknown with pure-Rust crypto only — no ring/aws-lc-rs/openssl (C/asm won't build).
+    sourceUrl: https://developers.cloudflare.com/workers/languages/rust/
+  - claim: Wire randomness with getrandom feature `wasm_js` AND the `getrandom_backend="wasm_js"` rustflag; run `cargo tree -i getrandom` before deploy.
+    sourceUrl: https://developers.cloudflare.com/workers/languages/rust/
+  - claim: Use jsonwebtoken with the `rust_crypto` backend (not the C `aws_lc_rs` backend, which won't build for WASM).
+    sourceUrl: https://www.rfc-editor.org/rfc/rfc7638
+  - claim: Do RSA sign/keygen via WebCrypto SubtleCrypto, not the `rsa` crate (RUSTSEC-2023-0071 Marvin timing attack; rsa verify-only is fine).
+    sourceUrl: https://rustsec.org/advisories/RUSTSEC-2023-0071.html
+  - claim: Enable `--panic-unwind` and keep the bundle under the free 3 MB limit (`opt-level="z"`, `lto`, `wasm-opt`).
+    sourceUrl: https://developers.cloudflare.com/workers/languages/rust/
+---
+
+The edge identity engine is **Rust compiled to `wasm32` and run on Cloudflare
+Workers** via the first-class `workers-rs`. That target has one governing rule:
+anything that links C or assembly crypto (ring, aws-lc-rs, OpenSSL) will not
+build, so the whole crate set is pure Rust — `jsonwebtoken` on the `rust_crypto`
+backend, `ed25519-dalek` for internal signing, `pasetors` for sessions, and
+`regorus` for policy.
+
+Two footguns are designed out: randomness must be explicitly wired to
+`crypto.getRandomValues` (the `wasm_js` getrandom feature **and** the matching
+rustflag — the number-one cause of broken builds), and RSA signing/keygen is
+delegated to **WebCrypto SubtleCrypto** rather than the `rsa` crate, which
+carries the RUSTSEC-2023-0071 Marvin timing advisory.

@@ -1,0 +1,25 @@
+---
+import Base from '../../layouts/Base.astro';
+import TechnologyCard from '../../components/TechnologyCard.astro';
+import { getCollection } from 'astro:content';
+
+const techs = (await getCollection('technologies')).sort(
+  (a, b) => a.data.order - b.data.order,
+);
+---
+<Base title="Standards & technologies — Lifecycle" description="Every technology in the Lifecycle identity engine, the standards it follows, and the best practices applied — each claim citation-backed.">
+  <main>
+    <h1 style="font-size:clamp(1.8rem,4vw,2.6rem); margin-bottom:var(--space-2);">
+      Standards &amp; technologies
+    </h1>
+    <p style="color:var(--color-muted); font-size:1.1rem; max-width:var(--measure);">
+      Each technology is built to the standards it follows, with the best
+      practices applied — and every claim is backed by a cited source.
+    </p>
+    <div style={`display:grid; gap:var(--space-3); margin-top:var(--space-4); grid-template-columns:repeat(auto-fill, minmax(280px, 1fr));`}>
+      {techs.map((t) => (
+        <TechnologyCard id={t.id} name={t.data.name} tagline={t.data.tagline} />
+      ))}
+    </div>
+  </main>
+</Base>

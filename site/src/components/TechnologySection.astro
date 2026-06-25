@@ -1,0 +1,29 @@
+---
+import CodeBlock from './CodeBlock.astro';
+import StandardsList from './StandardsList.astro';
+import BestPracticesList from './BestPracticesList.astro';
+import type { CollectionEntry } from 'astro:content';
+interface Props { data: CollectionEntry<'technologies'>['data'] }
+const { data } = Astro.props;
+---
+<section class="tech" aria-labelledby={`tech-${data.requirementKey}`}>
+  <h2 id={`tech-${data.requirementKey}`}>{data.name}</h2>
+  <p class="tech__tagline">{data.tagline}</p>
+  <div class="tech__body"><slot /></div>
+
+  <h3>Code</h3>
+  <CodeBlock code={data.codeSample} lang={data.codeLang} label={`${data.name} code sample`} />
+
+  <h3>Standards it follows</h3>
+  <StandardsList standards={data.standards} />
+
+  <h3>Best practices applied</h3>
+  <BestPracticesList items={data.bestPractices} />
+</section>
+<style>
+  .tech { margin: 0 0 var(--space-8); }
+  .tech__tagline { color: var(--color-muted); font-size: 1.1rem; margin-top: 0; }
+  .tech__body { max-width: var(--measure); }
+  .tech h2 { font-size: 1.6rem; }
+  .tech h3 { font-size: 1.05rem; margin-top: var(--space-4); }
+</style>

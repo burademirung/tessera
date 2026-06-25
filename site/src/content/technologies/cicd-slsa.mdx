@@ -1,0 +1,54 @@
+---
+name: CI/CD · SLSA supply chain
+tagline: Hardened GitHub Actions — SHA-pinned, keyless OIDC to the clouds, SLSA provenance attested and verified on consume.
+order: 150
+requirementKey: cicd-slsa
+standards:
+  - name: SLSA v1.x (Supply-chain Levels for Software Artifacts)
+    url: https://slsa.dev/spec/v1.0/levels
+  - name: GitHub Actions — OIDC hardening
+    url: https://docs.github.com/en/actions/deployment/security-hardening-your-deployments/about-security-hardening-with-openid-connect
+  - name: actions/attest-build-provenance
+    url: https://github.com/actions/attest-build-provenance
+codeLang: yaml
+codeSample: |
+  # SHA-pin every third-party action (tags are movable — the tj-actions
+  # CVE-2025-30066 re-pointed all tags; SHA-pinned users were safe).
+  # Top-level read-only token; escalate per job. Keyless OIDC pinned to env.
+  permissions:
+    contents: read
+  jobs:
+    deploy:
+      environment: production           # pin OIDC subject to the environment
+      permissions:
+        contents: read
+        id-token: write                 # keyless OIDC, zero static cloud keys
+        attestations: write             # SLSA provenance
+      steps:
+        - uses: step-security/harden-runner@<pinned-sha>   # audit -> block egress
+        - uses: actions/checkout@<pinned-sha>
+bestPractices:
+  - claim: SHA-pin every third-party action; tags are movable (tj-actions CVE-2025-30066 re-pointed all tags — SHA-pinned users were safe).
+    sourceUrl: https://docs.github.com/en/actions/deployment/security-hardening-your-deployments/about-security-hardening-with-openid-connect
+  - claim: Use keyless OIDC to the clouds with zero static keys, pinning the `sub` to a GitHub Environment (`repo:O/R:environment:NAME`).
+    sourceUrl: https://docs.github.com/en/actions/deployment/security-hardening-your-deployments/about-security-hardening-with-openid-connect
+  - claim: Attest SLSA provenance with `actions/attest-build-provenance` (L2 keyless on hosted runners) and verify on consume with `--certificate-identity`.
+    sourceUrl: https://github.com/actions/attest-build-provenance
+  - claim: Keep the top-level `GITHUB_TOKEN` read-only and escalate per job; route untrusted PR strings through `env:`, never inline them in `run:`.
+    sourceUrl: https://docs.github.com/en/actions/deployment/security-hardening-your-deployments/about-security-hardening-with-openid-connect
+  - claim: Reach SLSA Build L2 by default and L3 via a reusable workflow; verify artifacts before consuming them, never just "is it signed".
+    sourceUrl: https://slsa.dev/spec/v1.0/levels
+---
+
+Every deploy in Lifecycle runs through **hardened GitHub Actions**. The two
+load-bearing controls are SHA-pinning and keyless OIDC. Tags are mutable — the
+tj-actions/changed-files incident (CVE-2025-30066) silently re-pointed every tag,
+and only SHA-pinned consumers were safe — so every third-party action is pinned
+to a commit SHA with Dependabot keeping it fresh.
+
+Cloud access is **keyless**: jobs request short-lived credentials via OIDC with
+zero static keys, and the trust is pinned to a GitHub **Environment** subject.
+Build artifacts (the WASM engine, the CDK assets) get **SLSA provenance** via
+`actions/attest-build-provenance` (Build L2 by default on hosted runners), and
+consumers **verify** that provenance with `--certificate-identity` rather than
+trusting that something is merely signed.

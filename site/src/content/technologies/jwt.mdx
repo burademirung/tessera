@@ -1,0 +1,60 @@
+---
+name: JSON Web Tokens (JWT)
+tagline: One key, one algorithm, an explicit allow-list, and token key-URLs ignored — defeating alg-confusion and SSRF.
+order: 30
+requirementKey: jwt
+standards:
+  - name: JSON Web Token Best Current Practices
+    rfc: RFC 8725/BCP 225
+    url: https://www.rfc-editor.org/rfc/rfc8725
+  - name: JSON Web Key (JWK)
+    rfc: RFC 7517
+    url: https://www.rfc-editor.org/rfc/rfc7517
+  - name: JWK Thumbprint
+    rfc: RFC 7638
+    url: https://www.rfc-editor.org/rfc/rfc7638
+  - name: JWT Profile for OAuth 2.0 Access Tokens
+    rfc: RFC 9068
+    url: https://www.rfc-editor.org/rfc/rfc9068
+  - name: Token Introspection
+    rfc: RFC 7662
+    url: https://www.rfc-editor.org/rfc/rfc7662
+codeLang: rust
+codeSample: |
+  // Pin the algorithm allow-list; never trust the token's own `alg`.
+  // One key bound to one algorithm defeats the RS256 to HS256 confusion attack.
+  use jsonwebtoken::{decode, Validation, Algorithm, DecodingKey};
+
+  let mut v = Validation::new(Algorithm::EdDSA); // internal tokens = EdDSA
+  v.algorithms = vec![Algorithm::EdDSA];          // explicit allow-list, no `none`
+  v.required_spec_claims = ["iss", "aud", "exp"].into_iter().map(String::from).collect();
+  v.set_audience(&[expected_aud]);
+  v.set_issuer(&[expected_iss]);
+  // typ must be `at+jwt` for access tokens (RFC 9068); jku/x5u/jwk in the
+  // token header are IGNORED — keys come only from our cached, allow-listed JWKS.
+  let data = decode::<Claims>(token, &DecodingKey::from_ed_components(/* ... */), &v)?;
+bestPractices:
+  - claim: Verify against an explicit algorithm allow-list and reject `alg:none`.
+    sourceUrl: https://www.rfc-editor.org/rfc/rfc8725
+  - claim: Bind one key to exactly one algorithm to defeat RS256 to HS256 key-confusion.
+    sourceUrl: https://www.rfc-editor.org/rfc/rfc8725
+  - claim: Require an explicit `typ` (e.g. `at+jwt`) and validate `iss`/`aud`/`exp` so an ID token can't be replayed as an access token.
+    sourceUrl: https://www.rfc-editor.org/rfc/rfc9068
+  - claim: Ignore token-supplied `jku`/`x5u`/`jwk` — keys come only from the cached, allow-listed JWKS (SSRF defense).
+    sourceUrl: https://www.rfc-editor.org/rfc/rfc8725
+  - claim: Validate self-contained access tokens locally with cached JWKS; use introspection (RFC 7662) only for opaque / real-time revocation.
+    sourceUrl: https://www.rfc-editor.org/rfc/rfc7662
+---
+
+A JWT is only as safe as its verifier. Lifecycle follows the JWT BCP
+(RFC 8725) literally: an **explicit algorithm allow-list**, `alg:none` rejected,
+and **one key bound to one algorithm** so an attacker cannot downgrade an RS256
+public key into an HS256 shared secret. Every token must carry an explicit `typ`
+and pass `iss`/`aud`/`exp` checks, which is what stops an ID token being replayed
+as an access token (RFC 9068).
+
+Keys are never selected by the token: `jku`, `x5u` and inline `jwk` headers are
+ignored, and verification keys come only from a cached, allow-listed JWKS. The
+engine validates self-contained access tokens **locally at the edge** and reaches
+for introspection (RFC 7662) only when it needs real-time revocation of an opaque
+token.

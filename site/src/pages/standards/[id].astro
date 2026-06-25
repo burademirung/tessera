@@ -1,0 +1,26 @@
+---
+import Base from '../../layouts/Base.astro';
+import TechnologySection from '../../components/TechnologySection.astro';
+import { getCollection, render, type CollectionEntry } from 'astro:content';
+
+export async function getStaticPaths() {
+  const techs = await getCollection('technologies');
+  // Astro 5: entries expose `id` (no reserved `slug`); render() is a standalone import.
+  return techs.map((entry) => ({ params: { id: entry.id }, props: { entry } }));
+}
+
+interface Props { entry: CollectionEntry<'technologies'> }
+const { entry } = Astro.props;
+const { Content } = await render(entry);
+---
+<Base title={`${entry.data.name} — Lifecycle`} description={entry.data.tagline}>
+  <main>
+    <p style="margin:0;"><a href="/standards/" style="color:var(--color-accent);">← All technologies</a></p>
+    <h1 style="font-size:clamp(1.8rem,4vw,2.6rem); margin:var(--space-2) 0 var(--space-4);">
+      {entry.data.name}
+    </h1>
+    <TechnologySection data={entry.data}>
+      <Content />
+    </TechnologySection>
+  </main>
+</Base>

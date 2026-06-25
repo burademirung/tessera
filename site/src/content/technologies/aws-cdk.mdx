@@ -1,0 +1,49 @@
+---
+name: AWS CDK
+tagline: A TypeScript app provisioning the one AWS access-review slice — cdk-nag v3 enforced, RemovalPolicy.DESTROY for clean teardown.
+order: 120
+requirementKey: aws-cdk
+standards:
+  - name: AWS CDK Best Practices
+    url: https://docs.aws.amazon.com/cdk/v2/guide/best-practices.html
+  - name: cdk-nag (AwsSolutions rule pack)
+    url: https://github.com/cdklabs/cdk-nag
+  - name: CDK assertions (Template.fromStack)
+    url: https://docs.aws.amazon.com/cdk/v2/guide/testing.html
+codeLang: typescript
+codeSample: |
+  // cdk-nag v3 API (most tutorials are stale): Validations.of().addPlugins(),
+  // NOT Aspects.of().add(). Suppress with reasons via .acknowledge().
+  import { App } from 'aws-cdk-lib';
+  import { Validations } from 'aws-cdk-lib';
+  import { AwsSolutionsChecks } from 'cdk-nag';
+  import { AccessReviewStack } from '../lib/access-review-stack';
+
+  const app = new App();
+  new AccessReviewStack(app, 'AccessReviewStack', {
+    env: { account: process.env.CDK_ACCOUNT, region: 'us-east-1' }, // pinned env
+  });
+  Validations.of(app).addPlugins(new AwsSolutionsChecks({ verbose: true }));
+bestPractices:
+  - claim: Use the cdk-nag v3 API `Validations.of(app).addPlugins(new AwsSolutionsChecks())` — not the stale `Aspects.of().add()` pattern.
+    sourceUrl: https://github.com/cdklabs/cdk-nag
+  - claim: Pin `env` (env-agnostic stacks can't use `fromLookup`) and set RemovalPolicy.DESTROY / autoDeleteObjects for clean ephemeral teardown.
+    sourceUrl: https://docs.aws.amazon.com/cdk/v2/guide/best-practices.html
+  - claim: Keep the ownership boundary — CDK owns the single AWS app slice; Terraform owns the trust plane; neither references the other except as read-only import.
+    sourceUrl: https://docs.aws.amazon.com/cdk/v2/guide/best-practices.html
+  - claim: Test with `Template.fromStack` fine-grained assertions plus Jest snapshots.
+    sourceUrl: https://docs.aws.amazon.com/cdk/v2/guide/testing.html
+---
+
+AWS CDK provisions exactly **one** AWS slice — the access-review pipeline
+(EventBridge to Step Functions to DynamoDB) — shown alongside Terraform to
+demonstrate both IaC styles. The ownership boundary is strict: **CDK owns this
+in-account app slice; Terraform owns the multi-cloud trust plane**, and neither
+tool's state references a resource the other created except as a read-only
+import.
+
+The build enforces **cdk-nag v3**, whose API changed from the pattern most
+tutorials still show: it is `Validations.of(app).addPlugins(new
+AwsSolutionsChecks())`, with suppressions acknowledged with a written reason.
+`env` is pinned so `fromLookup` works, and every stateful resource is
+`RemovalPolicy.DESTROY` so the ephemeral demo tears down to zero.

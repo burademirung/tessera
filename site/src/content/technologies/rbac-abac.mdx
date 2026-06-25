@@ -1,0 +1,53 @@
+---
+name: RBAC / ABAC (policy-as-code)
+tagline: Role-centric RBAC-A per NIST — the role sets the envelope, attributes only narrow it; SoD evaluated preventively and detectively.
+order: 70
+requirementKey: rbac-abac
+standards:
+  - name: NIST RBAC (INCITS 359)
+    url: https://csrc.nist.gov/projects/role-based-access-control
+  - name: NIST SP 800-162 (ABAC)
+    url: https://csrc.nist.gov/pubs/sp/800/162/final
+  - name: NIST SP 800-53 r5 (AC family)
+    url: https://csrc.nist.gov/pubs/sp/800/53/r5/upd1/final
+codeLang: rego
+codeSample: |
+  # NIST four input categories: subject / resource / action / environment.
+  # ABAC constraints only NARROW the role-granted envelope (add-only would be a bug).
+  package authz
+
+  abac_constraints contains "within_business_hours" if {
+      input.environment.time_hour >= 9
+      input.environment.time_hour < 18
+  }
+
+  # Separation of Duties as a Rego matrix — evaluated preventively (request
+  # time) and detectively (review sweeps).
+  sod_violation if {
+      some a, b in input.subject.roles
+      data.sod_matrix[a][b]
+  }
+bestPractices:
+  - claim: Use role-centric RBAC-A — the role is the envelope and ABAC may only narrow it; an add-only Mover is a bug.
+    sourceUrl: https://csrc.nist.gov/pubs/sp/800/162/final
+  - claim: Model NIST's four input categories — subject (+roles), resource, action, environment.
+    sourceUrl: https://csrc.nist.gov/pubs/sp/800/162/final
+  - claim: Encode Separation of Duties as a Rego matrix and evaluate it both preventively (request-time) and detectively (review sweeps).
+    sourceUrl: https://csrc.nist.gov/projects/role-based-access-control
+  - claim: Keep roles and bindings in `data` and per-request subject/resource/action/environment in `input` (clean PEP/PDP split).
+    sourceUrl: https://csrc.nist.gov/pubs/sp/800/53/r5/upd1/final
+---
+
+Lifecycle blends the two NIST access-control models without picking a side. RBAC
+(INCITS 359) is simple and auditable; ABAC (SP 800-162) is flexible. The bridge
+the standard itself suggests — "a role may be viewed as a subject attribute" —
+becomes **role-centric RBAC-A**: the role sets the permission envelope and
+attribute rules may only **narrow** it. An access change recalculates
+`grant = target - current` and `revoke = current - target`; an add-only update
+would silently accumulate privilege.
+
+Authorization is expressed over NIST's four input categories — subject (with
+roles), resource, action, and environment — with roles and bindings living in
+`data` and the per-request facts in `input`. Separation of Duties is a Rego
+matrix evaluated both at request time (preventive) and during periodic review
+sweeps (detective).

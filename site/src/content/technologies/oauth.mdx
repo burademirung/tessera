@@ -1,0 +1,60 @@
+---
+name: OAuth 2.1 · PKCE · DPoP
+tagline: Built to the stricter OAuth 2.1 bar — PKCE everywhere, exact redirect matching, and DPoP sender-constrained browser tokens.
+order: 20
+requirementKey: oauth
+standards:
+  - name: OAuth 2.0 Authorization Framework
+    rfc: RFC 6749
+    url: https://www.rfc-editor.org/rfc/rfc6749
+  - name: OAuth 2.1 (draft)
+    url: https://oauth.net/2.1/
+  - name: OAuth 2.0 Security Best Current Practice
+    rfc: RFC 9700/BCP 240
+    url: https://www.rfc-editor.org/rfc/rfc9700.html
+  - name: Demonstrating Proof of Possession (DPoP)
+    rfc: RFC 9449
+    url: https://www.rfc-editor.org/rfc/rfc9449
+  - name: OAuth 2.0 Mutual-TLS Client Authentication
+    rfc: RFC 8705
+    url: https://www.rfc-editor.org/rfc/rfc8705
+codeLang: rust
+codeSample: |
+  // DPoP proof verification at the edge (the natural enforcement point for
+  // browser/SPA clients). The proof is a signed JWT: typ=dpop+jwt, embedded
+  // jwk, with htm/htu/jti/iat (+ ath when an access token is presented).
+  fn verify_dpop(proof: &DpopProof, method: &str, url: &str, cnf_jkt: &str) -> bool {
+      proof.typ == "dpop+jwt"
+          && proof.htm.eq_ignore_ascii_case(method)
+          && proof.htu == url
+          && proof.iat_within_skew()
+          && proof.jti_unused()                 // single-use
+          && proof.thumbprint() == cnf_jkt      // bind to the access token's cnf.jkt
+          && proof.verify_signature()           // against the embedded jwk
+  }
+bestPractices:
+  - claim: Require PKCE for ALL clients (OAuth 2.1 raises it beyond public clients) and reject `plain`.
+    sourceUrl: https://www.rfc-editor.org/rfc/rfc9700.html
+  - claim: Enforce exact redirect-URI matching — no wildcards (localhost port is the only exception).
+    sourceUrl: https://www.rfc-editor.org/rfc/rfc9700.html
+  - claim: Prohibit the Implicit grant, ROPC, and `response_type=token` (all removed in OAuth 2.1).
+    sourceUrl: https://oauth.net/2.1/
+  - claim: Audience-restrict access tokens and never put bearer tokens in query strings.
+    sourceUrl: https://www.rfc-editor.org/rfc/rfc9700.html
+  - claim: Sender-constrain browser tokens with DPoP (cnf.jkt); use mTLS (cnf.x5t#S256) for confidential clients.
+    sourceUrl: https://www.rfc-editor.org/rfc/rfc9449
+  - claim: Rotate refresh tokens with reuse detection — a replayed refresh token invalidates the whole grant family.
+    sourceUrl: https://www.rfc-editor.org/rfc/rfc9700.html
+---
+
+OAuth 2.1 consolidates a decade of security hard-won lessons (RFC 9700 / BCP
+240) into one stricter baseline. Lifecycle builds to the **OAuth 2.1 bar**, which
+is forward-compatible with the published BCP: PKCE on every client, exact
+redirect-URI matching, no Implicit/ROPC/`response_type=token`, single-use
+authorization codes under ten minutes, and audience-restricted access tokens.
+
+For browser and SPA clients the edge is the natural enforcement point for
+**DPoP (RFC 9449)** — a per-request signed proof that binds the token to the
+client's key (`cnf.jkt`). Confidential clients are bound with mTLS
+(`cnf.x5t#S256`, RFC 8705) instead. Refresh tokens are rotated with reuse
+detection, so a stolen-and-replayed refresh token revokes the entire grant.

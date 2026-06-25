@@ -1,0 +1,55 @@
+---
+name: SCIM 2.0
+tagline: A service provider that passes both Okta CRUD and the Microsoft SCIM Validator — absorbing both Entra PATCH dialects.
+order: 50
+requirementKey: scim
+standards:
+  - name: SCIM Definitions, Overview, Concepts
+    rfc: RFC 7642
+    url: https://www.rfc-editor.org/rfc/rfc7642
+  - name: SCIM Core Schema
+    rfc: RFC 7643
+    url: https://www.rfc-editor.org/rfc/rfc7643
+  - name: SCIM Protocol
+    rfc: RFC 7644
+    url: https://www.rfc-editor.org/rfc/rfc7644
+codeLang: rust
+codeSample: |
+  // Absorb both IdP dialects: Entra sends capitalized `op` and (legacy)
+  // `active` as the STRING "False"; Okta sends a no-path replace. One
+  // PATCH engine handles add/replace/remove over a canonical attribute tree.
+  fn normalize_op(op: &str) -> Op { op.to_ascii_lowercase().parse().unwrap() }
+
+  fn parse_active(v: &serde_json::Value) -> bool {
+      match v {
+          serde_json::Value::Bool(b) => *b,
+          serde_json::Value::String(s) => !s.eq_ignore_ascii_case("false"),
+          _ => true,
+      }
+  }
+  // active=false is a SOFT delete: the user stays GET-able (never hard-delete).
+  // Unknown user filter to 200 empty ListResponse (never 404); counts are integers.
+bestPractices:
+  - claim: Normalize `op` case-insensitively and accept `active` as a boolean AND the string "False" (Entra legacy dialect).
+    sourceUrl: https://learn.microsoft.com/en-us/entra/identity/app-provisioning/use-scim-to-provision-users-and-groups
+  - claim: Handle `replace` both with and without `path`, and group-member removal as both a value array and `members[value eq "..."]`.
+    sourceUrl: https://developer.okta.com/docs/guides/scim-provisioning-integration-overview/main/
+  - claim: Never hard-delete on `active:false` — keep the resource GET-able (soft delete).
+    sourceUrl: https://www.rfc-editor.org/rfc/rfc7644
+  - claim: Match by `userName` AND `externalId`; a zero-result filter returns a 200 empty ListResponse, never 404; counts are integers.
+    sourceUrl: https://www.rfc-editor.org/rfc/rfc7644
+  - claim: Serve `application/scim+json` over TLS 1.2+ with a public CA, and statically compile /Schemas, /ResourceTypes, /ServiceProviderConfig.
+    sourceUrl: https://www.rfc-editor.org/rfc/rfc7643
+---
+
+SCIM 2.0 (RFC 7642/7643/7644) is the provisioning wire protocol, and the only
+real test of a SCIM service provider is that **both** Okta and Microsoft Entra
+drive it cleanly — and they disagree. Entra sends a capitalized `op`, can encode
+`active` as the **string** `"False"`, and uses a no-path multi-attribute
+`replace`; Okta sends a no-path `replace` with a boolean. The Lifecycle SCIM
+endpoint absorbs all of it with one PATCH engine over a canonical attribute tree.
+
+Two rules prevent the classic failures: `active:false` is a **soft delete** (the
+user stays GET-able), and an unknown-user filter returns a `200` empty
+`ListResponse`, never a `404` — which is exactly what Entra's "Test Connection"
+probe checks. Everything is served as `application/scim+json` over TLS 1.2+.

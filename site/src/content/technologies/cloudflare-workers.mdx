@@ -1,0 +1,49 @@
+---
+name: Cloudflare Workers
+tagline: The whole edge platform — Workers, Durable Objects for single-writer sessions, R2 WORM audit, KV as read-cache only.
+order: 140
+requirementKey: cloudflare-workers
+standards:
+  - name: Cloudflare Workers (platform)
+    url: https://developers.cloudflare.com/workers/
+  - name: Durable Objects
+    url: https://developers.cloudflare.com/durable-objects/
+  - name: R2 Bucket Locks (WORM)
+    url: https://developers.cloudflare.com/r2/buckets/bucket-locks/
+codeLang: rust
+codeSample: |
+  // Sessions are OPAQUE tokens backed by a single-writer Durable Object, so
+  // "log out everywhere" / revocation is instant. KV is a read-cache only —
+  // never the sole revocation authority (it is eventually consistent).
+  #[durable_object]
+  pub struct SessionStore { state: State }
+
+  impl SessionStore {
+      pub async fn revoke_all(&self, subject: &str) -> Result<()> {
+          // strong consistency: subsequent reads see the revocation immediately
+          self.state.storage().delete_all().await
+      }
+  }
+bestPractices:
+  - claim: Back sessions with a single-writer Durable Object for strong consistency and instant revocation; use KV only as a read-cache.
+    sourceUrl: https://developers.cloudflare.com/durable-objects/
+  - claim: Write the audit log to R2 with Bucket Locks (WORM-style) plus an app-level hash chain — R2 locks are not S3 Compliance mode.
+    sourceUrl: https://developers.cloudflare.com/r2/buckets/bucket-locks/
+  - claim: Respect the platform limits — 3 MB free bundle, 400 ms startup CPU, no OS threads/filesystem; outbound only via `fetch`.
+    sourceUrl: https://developers.cloudflare.com/workers/
+  - claim: Cache discovery/JWKS in KV + the Cache API with single-flight refresh as a DoS absorber; never fetch JWKS per request.
+    sourceUrl: https://developers.cloudflare.com/workers/
+---
+
+Cloudflare Workers is the entire edge platform for Lifecycle, and each concern
+maps to the primitive that fits its consistency needs. The engine, SCIM endpoint
+and OIDC Provider run as a Rust/WASM Worker. **Sessions are opaque tokens backed
+by a single-writer Durable Object**, so "log out everywhere" and revocation are
+strongly consistent and instant — KV is only ever a read-cache, never the sole
+revocation authority because it is eventually consistent.
+
+The audit log is the system of record on **R2 with Bucket Locks** (WORM-style,
+though not S3 Compliance mode, so an app-level hash chain is added). Discovery
+and JWKS documents are cached in KV and the Cache API with single-flight refresh
+to absorb DoS, and the engine respects the platform's hard limits: a 3 MB free
+bundle, a 400 ms startup-CPU budget, and outbound calls only through `fetch`.
