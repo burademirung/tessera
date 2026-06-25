@@ -1,10 +1,13 @@
 pub mod auth;
+pub mod d1_store;
 pub mod dialect;
 pub mod discovery;
 pub mod error;
 pub mod filter;
+pub mod handlers;
 pub mod model;
 pub mod page;
 pub mod patch;
+pub mod router;
 pub mod service;
 pub mod store;
