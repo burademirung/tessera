@@ -6,3 +6,13 @@ dist/
 target/
 cdk.out/
 .dev.vars
+.worktrees/
+.superpowers/
+.wrangler/
+edge/target/
+site/node_modules/
+site/dist/
+cdk/node_modules/
+cdk/cdk.out/
+**/.terraform/
+control-plane/**/*.test
