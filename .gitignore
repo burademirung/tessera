@@ -6,3 +6,4 @@ dist/
 target/
 cdk.out/
 .dev.vars
+edge/tests/fixtures/seed.hex
