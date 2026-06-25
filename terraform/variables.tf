@@ -37,11 +37,6 @@ variable "azure_tenant_id" {
   description = "Entra tenant id."
 }
 
-variable "cloudflare_account_id" {
-  type        = string
-  description = "Cloudflare account id (for any R2/issuer-adjacent resources)."
-}
-
 variable "edge_issuer_host_path" {
   type        = string
   description = "Issuer host+path with no scheme (used to build AWS condition keys like <host-path>:aud)."
