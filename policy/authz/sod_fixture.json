@@ -1,0 +1,8 @@
+{
+	"sod_fixture": {
+		"sod": {
+			"toxic_pairs": [["provisioner", "approver"], ["helpdesk", "approver"]],
+			"self_approval_actions": ["approve"]
+		}
+	}
+}

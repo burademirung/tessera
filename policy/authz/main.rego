@@ -12,6 +12,7 @@ default allow := false
 allow if {
 	role_permits
 	abac_ok
+	not sod_conflict
 }
 
 # role_permits is defined in rbac.rego (Task 2); abac_ok in abac.rego (Task 3).
