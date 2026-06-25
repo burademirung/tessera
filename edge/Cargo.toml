@@ -27,7 +27,7 @@ ed25519-dalek = { version = "2.2", default-features = false, features = ["rand_c
 # The OIDC RP flow (PKCE-S256/state/nonce) is hand-rolled in `rp.rs` over sha2 +
 # base64url, so `oauth2`/`openidconnect`/`pasetors` are not referenced and were
 # dropped (they also transitively re-introduced `rsa` via openidconnect).
-sha2 = "0.10"
+sha2 = "0.11"
 base64ct = { version = "1", features = ["alloc"] }
 serde = { version = "1", features = ["derive"] }
 serde_json = "1"
