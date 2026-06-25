@@ -1,6 +1,7 @@
 pub mod discovery;
 pub mod federation;
 pub mod internal_token;
+pub mod introspect;
 pub mod jwks;
 pub mod jwt;
 pub mod rp;
