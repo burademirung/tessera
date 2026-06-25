@@ -1,7 +1,10 @@
+pub mod auth;
 pub mod dialect;
+pub mod discovery;
 pub mod error;
 pub mod filter;
 pub mod model;
 pub mod page;
 pub mod patch;
+pub mod service;
 pub mod store;
