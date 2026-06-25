@@ -1,0 +1,22 @@
+name: infracost-guardrail
+on:
+  pull_request:
+    paths: ['terraform/**', 'bootstrap/**']
+permissions:
+  contents: read
+jobs:
+  cost:
+    runs-on: ubuntu-latest
+    steps:
+      # NOTE: SHA-pin each action before first run (Phase 9 hardens; see research/08).
+      - uses: actions/checkout@v4
+      - uses: infracost/actions/setup@v3
+        with:
+          api-key: ${{ secrets.INFRACOST_API_KEY }}
+      - name: Generate breakdown
+        run: |
+          infracost breakdown --path=terraform \
+            --usage-file=terraform/infracost-usage.yml \
+            --format=json --out-file=/tmp/infracost.json
+      - name: Enforce ~$0 guardrail
+        run: terraform/tests/cost_guardrail.test.sh /tmp/infracost.json
