@@ -1,0 +1,9 @@
+# zizmor audit config — fail the build on any finding at/above "low".
+rules:
+  unpinned-uses:
+    config:
+      policies:
+        "*": hash-pin   # require a full commit SHA for every `uses:`
+  template-injection: {}      # flags ${{ github.event.* }} reaching run:
+  excessive-permissions: {}
+  dangerous-triggers: {}

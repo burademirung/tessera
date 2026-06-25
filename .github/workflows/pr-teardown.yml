@@ -1,0 +1,75 @@
+name: pr-teardown
+on:
+  pull_request:
+    types: [closed]
+permissions:
+  contents: read
+concurrency:
+  group: pr-ephemeral-${{ github.event.number }}   # share group → serialize after any apply
+  cancel-in-progress: false
+jobs:
+  destroy:
+    runs-on: ubuntu-latest
+    environment: pr-${{ github.event.number }}
+    permissions:
+      id-token: write
+      contents: read
+    env:
+      PR_NUMBER: ${{ github.event.number }}
+    steps:
+      - uses: ./.github/actions/harden-setup
+        with:
+          egress-policy: audit
+          toolchain: terraform
+      - name: AWS OIDC
+        uses: aws-actions/configure-aws-credentials@e3dd6a429d7300a6a4c196c26e071d42e0343502 # v4.0.2
+        with:
+          role-to-assume: ${{ secrets.AWS_ROLE_ARN }}
+          aws-region: ${{ vars.AWS_REGION }}
+          audience: sts.amazonaws.com
+      - name: GCP OIDC
+        uses: google-github-actions/auth@71f986410dfbc7added4569d411d040a91dc6935 # v2.1.8
+        with:
+          workload_identity_provider: ${{ secrets.GCP_WIF_PROVIDER }}
+      - name: Azure OIDC
+        uses: azure/login@a65d910e8af852a8061c627c456678983e180302 # v2.2.0
+        with:
+          client-id: ${{ secrets.AZURE_CLIENT_ID }}
+          tenant-id: ${{ secrets.AZURE_TENANT_ID }}
+          subscription-id: ${{ secrets.AZURE_SUBSCRIPTION_ID }}
+      - name: CDK destroy
+        run: |
+          npm --prefix cdk ci
+          npm --prefix cdk run cdk -- destroy --force --context "env=pr-${PR_NUMBER}"
+      - name: Terraform destroy
+        working-directory: terraform
+        run: |
+          terraform init -input=false
+          terraform destroy -auto-approve -input=false -var="environment=pr-${PR_NUMBER}"
+      - name: Wrangler delete preview version
+        uses: cloudflare/wrangler-action@6d58852c35a27e6034745c5d0bc373d739014f7f # v3.13.0
+        with:
+          apiToken: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          accountId: ${{ vars.CLOUDFLARE_ACCOUNT_ID }}
+          wranglerVersion: '4.103.0'
+          workingDirectory: edge
+          command: deployments list
+
+  delete-environment:
+    needs: destroy
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    env:
+      PR_NUMBER: ${{ github.event.number }}
+    steps:
+      - uses: ./.github/actions/harden-setup
+        with:
+          egress-policy: audit
+      - name: Delete the GitHub Environment (needs repo-scoped token)
+        env:
+          GH_TOKEN: ${{ secrets.ENV_CLEANUP_TOKEN }}
+        run: |
+          gh api -X DELETE \
+            "repos/${GITHUB_REPOSITORY}/environments/pr-${PR_NUMBER}" \
+            && echo "Deleted environment pr-${PR_NUMBER}"

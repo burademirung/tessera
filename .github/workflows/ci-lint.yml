@@ -1,0 +1,62 @@
+name: ci-lint
+on:
+  pull_request:
+    paths: ['.github/**', '.zizmor.yml']
+  push:
+    branches: [main]
+    paths: ['.github/**', '.zizmor.yml']
+permissions:
+  contents: read
+concurrency:
+  group: ci-lint-${{ github.ref }}
+  cancel-in-progress: true
+jobs:
+  actionlint:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: step-security/harden-runner@cb605e52c26070c328afc4562f0b4ada7618a84e # v2.10.4
+        with:
+          egress-policy: audit
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+      - name: actionlint
+        uses: rhysd/actionlint@03d0035246f3e81f36aed592ffb4bebf33a03106 # v1.7.7
+        with:
+          flags: '-color'
+  zizmor:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      security-events: write
+    steps:
+      - uses: step-security/harden-runner@cb605e52c26070c328afc4562f0b4ada7618a84e # v2.10.4
+        with:
+          egress-policy: audit
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+        with:
+          persist-credentials: false
+      - name: zizmor audit
+        uses: zizmorcore/zizmor-action@f52a838cfabf134edcbaa7c8b3677dde20045018 # v0.1.1
+        with:
+          advanced-security: true
+          persona: auto
+  no-inline-event-strings:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: step-security/harden-runner@cb605e52c26070c328afc4562f0b4ada7618a84e # v2.10.4
+        with:
+          egress-policy: audit
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+      - name: Fail on inline github.event.* in run blocks or unpinned uses
+        run: |
+          set -euo pipefail
+          # 1) unpinned uses: any `uses:` not pinned to a 40-hex SHA
+          if grep -rEn 'uses:[[:space:]]+[^@]+@[^[:space:]]+' .github/workflows .github/actions 2>/dev/null \
+               | grep -vE 'uses:[[:space:]]+[^@]+@[0-9a-f]{40}( |$)'; then
+            echo "::error::Found a uses: not pinned to a 40-char SHA"; exit 1
+          fi
+          # 2) inline event interpolation inside run blocks (heuristic: line in a run: context)
+          if grep -rEn '\$\{\{[[:space:]]*github\.event\.' .github/workflows \
+               | grep -vE '^\S+:[0-9]+:[[:space:]]*(#|env:|with:|if:|name:)'; then
+            echo "::error::Possible inline github.event.* — route via env: and \"$VAR\""; exit 1
+          fi
+          echo "OK: all uses SHA-pinned; no inline github.event.* detected"

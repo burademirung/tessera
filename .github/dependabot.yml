@@ -1,0 +1,54 @@
+version: 2
+updates:
+  # GitHub Actions — keeps SHA pins + version comments current.
+  - package-ecosystem: github-actions
+    directory: /
+    schedule:
+      interval: weekly
+    groups:
+      actions:
+        patterns: ['*']
+    open-pull-requests-limit: 10
+    labels: ['dependencies', 'github-actions']
+
+  # Reusable composite action lives under .github/actions/* — scan it too.
+  - package-ecosystem: github-actions
+    directory: /.github/actions/harden-setup
+    schedule:
+      interval: weekly
+    labels: ['dependencies', 'github-actions']
+
+  # Rust edge engine (Phase 2/4) — RustSec via Dependabot complements cargo audit.
+  - package-ecosystem: cargo
+    directory: /edge
+    schedule:
+      interval: weekly
+    labels: ['dependencies', 'rust']
+
+  # Go control plane (Phase 5).
+  - package-ecosystem: gomod
+    directory: /control-plane
+    schedule:
+      interval: weekly
+    labels: ['dependencies', 'go']
+
+  # Astro site (Phase 1).
+  - package-ecosystem: npm
+    directory: /site
+    schedule:
+      interval: weekly
+    labels: ['dependencies', 'javascript']
+
+  # CDK app (Phase 6) — TypeScript/npm.
+  - package-ecosystem: npm
+    directory: /cdk
+    schedule:
+      interval: weekly
+    labels: ['dependencies', 'javascript', 'cdk']
+
+  # Terraform providers/modules (Phase 6).
+  - package-ecosystem: terraform
+    directory: /terraform
+    schedule:
+      interval: weekly
+    labels: ['dependencies', 'terraform']

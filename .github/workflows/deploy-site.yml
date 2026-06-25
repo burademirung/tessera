@@ -5,25 +5,28 @@ on:
     paths: ['site/**', '.github/workflows/deploy-site.yml']
 permissions:
   contents: read
+concurrency:
+  group: deploy-site-${{ github.ref }}
+  cancel-in-progress: false
 jobs:
   deploy:
     runs-on: ubuntu-latest
     environment: production
+    permissions:
+      contents: read
     steps:
-      # NOTE: replace each @<tag> with a pinned commit SHA before first run (see docs/superpowers/research/08).
-      - uses: actions/checkout@v4
-      - uses: pnpm/action-setup@v4
-        with: { version: 9 }
-      - uses: actions/setup-node@v4
-        with: { node-version: 20, cache: pnpm, cache-dependency-path: site/pnpm-lock.yaml }
+      - uses: ./.github/actions/harden-setup
+        with:
+          egress-policy: audit
+          toolchain: node
       - run: pnpm --dir site install --frozen-lockfile
       - run: pnpm --dir site build
       - run: pnpm --dir site test
-      - uses: cloudflare/wrangler-action@v3
+      - name: Deploy to Cloudflare Pages (scoped token, pinned wrangler)
+        uses: cloudflare/wrangler-action@6d58852c35a27e6034745c5d0bc373d739014f7f # v3.13.0
         with:
           apiToken: ${{ secrets.CLOUDFLARE_API_TOKEN }}
-          accountId: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
-          wranglerVersion: '4.103.0' # pin; bump to the current v4 at first run
-          # project name + output dir come from site/wrangler.jsonc; no positionals.
-          command: pages deploy
+          accountId: ${{ vars.CLOUDFLARE_ACCOUNT_ID }}
+          wranglerVersion: '4.103.0'
           workingDirectory: site
+          command: pages deploy ./dist --project-name lifecycle-site

@@ -1,0 +1,91 @@
+name: pr-ephemeral
+on:
+  pull_request:
+    types: [opened, synchronize, reopened]
+permissions:
+  contents: read
+concurrency:
+  group: pr-ephemeral-${{ github.event.number }}
+  cancel-in-progress: false   # NEVER cancel an in-flight apply
+jobs:
+  deploy-ephemeral:
+    runs-on: ubuntu-latest
+    environment:
+      name: pr-${{ github.event.number }}
+      url: ${{ steps.preview.outputs.url }}
+    permissions:
+      id-token: write       # keyless OIDC to AWS/GCP/Azure
+      contents: read
+      pull-requests: write  # post preview URL
+    env:
+      PR_NUMBER: ${{ github.event.number }}
+      PR_HEAD_REF: ${{ github.event.pull_request.head.ref }}   # routed via env (untrusted)
+    steps:
+      - uses: ./.github/actions/harden-setup
+        with:
+          egress-policy: audit
+          toolchain: terraform
+      - name: AWS OIDC (env-pinned sub)
+        uses: aws-actions/configure-aws-credentials@e3dd6a429d7300a6a4c196c26e071d42e0343502 # v4.0.2
+        with:
+          role-to-assume: ${{ secrets.AWS_ROLE_ARN }}
+          aws-region: ${{ vars.AWS_REGION }}
+          audience: sts.amazonaws.com
+      - name: GCP OIDC (direct WIF)
+        uses: google-github-actions/auth@71f986410dfbc7added4569d411d040a91dc6935 # v2.1.8
+        with:
+          workload_identity_provider: ${{ secrets.GCP_WIF_PROVIDER }}
+      - name: Azure OIDC (FIC env-pinned)
+        uses: azure/login@a65d910e8af852a8061c627c456678983e180302 # v2.2.0
+        with:
+          client-id: ${{ secrets.AZURE_CLIENT_ID }}
+          tenant-id: ${{ secrets.AZURE_TENANT_ID }}
+          subscription-id: ${{ secrets.AZURE_SUBSCRIPTION_ID }}
+      - name: Terraform apply (ephemeral, tagged for reaper)
+        working-directory: terraform
+        run: |
+          # Do NOT set TF_VAR_* in an env: block — env: values are not shell-expanded,
+          # so `pr-${PR_NUMBER}` and `$(date ...)` would be passed literally. Compute
+          # them here (PR_NUMBER is exposed to the shell via the job-level env:).
+          terraform init -input=false
+          EXPIRES="$(date -u -d '+8 hours' +%Y-%m-%dT%H:%M:%SZ)"
+          terraform apply -auto-approve -input=false \
+            -var="environment=pr-${PR_NUMBER}" \
+            -var="expires_at=${EXPIRES}"
+      - name: CDK deploy (AWS access-review slice)
+        run: |
+          npm --prefix cdk ci
+          npm --prefix cdk run cdk -- deploy --require-approval never --ci \
+            --context "env=pr-${PR_NUMBER}"
+      - name: Wrangler preview deploy (CF scoped token, pinned version)
+        id: wrangler
+        uses: cloudflare/wrangler-action@6d58852c35a27e6034745c5d0bc373d739014f7f # v3.13.0
+        with:
+          apiToken: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          accountId: ${{ vars.CLOUDFLARE_ACCOUNT_ID }}
+          wranglerVersion: '4.103.0'
+          workingDirectory: edge
+          command: versions upload --tag pr-${{ env.PR_NUMBER }}
+      - name: Compute preview URL
+        id: preview
+        env:
+          WRANGLER_OUT: ${{ steps.wrangler.outputs.command-output }}
+        run: |
+          # Route untrusted/dynamic output via env, never inline
+          URL="https://pr-${PR_NUMBER}.lifecycle-edge.workers.dev"
+          echo "url=${URL}" >> "$GITHUB_OUTPUT"
+      - name: Post preview URL comment
+        uses: actions/github-script@60a0d83039c74a4aee543508d2ffcb1c3799cdea # v7.0.1
+        env:
+          PREVIEW_URL: ${{ steps.preview.outputs.url }}
+          HEAD_REF: ${{ env.PR_HEAD_REF }}
+        with:
+          script: |
+            const url = process.env.PREVIEW_URL;
+            const ref = process.env.HEAD_REF;
+            await github.rest.issues.createComment({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              issue_number: context.issue.number,
+              body: `Ephemeral environment for \`${ref}\` is live: ${url}\nResources expire in 8h (reaper backstop).`,
+            });

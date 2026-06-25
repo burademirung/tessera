@@ -5,39 +5,51 @@ on:
     paths: ['terraform/**', 'cdk/**']
 permissions:
   contents: read
-  id-token: write
 concurrency:
-  group: destroy-${{ github.event.pull_request.number }}
-  cancel-in-progress: false # never cancel an in-flight destroy
+  group: destroy-${{ github.event.number }}
+  cancel-in-progress: false   # never cancel an in-flight destroy
 jobs:
   teardown:
     runs-on: ubuntu-latest
-    environment: demo
+    environment: production
+    permissions:
+      id-token: write
+      contents: read
+    env:
+      PR_NUMBER: ${{ github.event.number }}
     steps:
-      # NOTE: SHA-pin each action before first run (Phase 9 hardens; see research/08).
-      - uses: actions/checkout@v4
-      - uses: actions/setup-node@v4
+      - uses: ./.github/actions/harden-setup
         with:
-          node-version: '20'
-      - uses: hashicorp/setup-terraform@v3
+          egress-policy: audit
+          toolchain: terraform
+      - name: AWS OIDC
+        uses: aws-actions/configure-aws-credentials@e3dd6a429d7300a6a4c196c26e071d42e0343502 # v4.0.2
         with:
-          terraform_version: '1.11.4'
-          terraform_wrapper: false
-      # OIDC cloud auth steps (configure-aws-credentials / google-github-actions/auth /
-      # azure/login) assume the bootstrap CI deploy identities — wired with the rest of
-      # the hardened pipeline in Phase 9.
+          role-to-assume: ${{ secrets.AWS_ROLE_ARN }}
+          aws-region: ${{ vars.AWS_REGION }}
+          audience: sts.amazonaws.com
+      - name: GCP OIDC
+        uses: google-github-actions/auth@71f986410dfbc7added4569d411d040a91dc6935 # v2.1.8
+        with:
+          workload_identity_provider: ${{ secrets.GCP_WIF_PROVIDER }}
+      - name: Azure OIDC
+        uses: azure/login@a65d910e8af852a8061c627c456678983e180302 # v2.2.0
+        with:
+          client-id: ${{ secrets.AZURE_CLIENT_ID }}
+          tenant-id: ${{ secrets.AZURE_TENANT_ID }}
+          subscription-id: ${{ secrets.AZURE_SUBSCRIPTION_ID }}
       - name: cdk destroy
         working-directory: cdk
         run: |
           npm ci
-          npx cdk destroy --force
+          npx cdk destroy --force --context "env=pr-${PR_NUMBER}"
       - name: terraform destroy
         working-directory: terraform
         env:
-          R2_ACCOUNT_ID: ${{ secrets.R2_ACCOUNT_ID }}
+          R2_ACCOUNT_ID: ${{ vars.R2_ACCOUNT_ID }}
         run: |
           terraform init \
             -backend-config="bucket=lifecycle-tfstate" \
             -backend-config="key=federation/terraform.tfstate" \
             -backend-config="endpoints={s3=\"https://${R2_ACCOUNT_ID}.r2.cloudflarestorage.com\"}"
-          terraform destroy -auto-approve
+          terraform destroy -auto-approve -var="environment=pr-${PR_NUMBER}"
