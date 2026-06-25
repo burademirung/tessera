@@ -7,9 +7,9 @@
 **Architecture:** Two halves.
 
 - **(A) Telemetry backend (Cloudflare).** The Phase-2 edge engine (Rust/WASM) already processes identity events; we add a thin seam that publishes a validated `TelemetryEvent` to a Queue on each phase transition. A Queue consumer hands the event to a single **Durable Object aggregator** (single-writer) that keeps a bounded recent-events **ring buffer** and fans out to subscribed SSE clients. The SSE endpoint is a TypeScript Astro API route running on the `@astrojs/cloudflare` adapter; it opens a stream from the DO, frames events as `data:`/`id:`/`retry:`, and supports `Last-Event-ID` replay from the ring. A `POST /api/telemetry/demo` route triggers the edge demo flow so "Run the demo" produces a real cascade of events.
-- **(B) Frontend wiring.** A `zustand` telemetry store (transient `subscribe`, never React state on the hot path) receives parsed events; a `useFrame` animation layer damps node-glow and edge-pulse uniforms toward per-edge/per-node targets and calls `invalidate()` only while a pulse is decaying, then parks. The island opens **one** `EventSource` — only in `webgl-*`/`svg` *live* modes, **never** under reduced-motion / Save-Data (poster mode never constructs an `EventSource`). The accessible SVG/data-table stays the source of truth and announces events through an ARIA live region. A visible **Pause** control stops motion and detaches the stream.
+- **(B) Frontend wiring.** A `zustand` telemetry store (transient `subscribe`, never React state on the hot path) receives parsed events and records per-node and per-edge activation targets; a `useFrame` animation layer damps the **edge-pulse** material color/opacity toward those per-edge targets (the visible flow animation) and calls `invalidate()` only while a pulse is decaying, then parks. (Node-glow targets are tracked in the store by `applyEvent` and surfaced in the SVG/data-table source-of-truth; animating the 3D node-sphere emissive from those targets is a one-line extension on the same `useFrame` pass and is left as an optional follow-on — the edge pulse is the load-bearing 3D animation this phase ships and tests.) The island opens **one** `EventSource` — only in `webgl-*`/`svg` *live* modes, **never** under reduced-motion / Save-Data (poster mode never constructs an `EventSource`). The accessible SVG/data-table stays the source of truth and announces events through an ARIA live region. A visible **Pause** control stops motion and detaches the stream.
 
-**Tech stack (extends Phase 1):** Astro 5 switched to `output: 'server'` with `@astrojs/cloudflare` (per-route `prerender` boundaries keep content static); React 18; `@react-three/fiber` + `@react-three/drei` + `three`; `maath` (`damp`/`damp3`/`dampC`); `zustand`; Vitest (unit) + Playwright (e2e/a11y) + `@axe-core/playwright`; Wrangler. Backend logic under `edge/src/telemetry/` (Rust pure-logic crate module + shared TS schema mirror) and `site/src/pages/api/` (SSE + demo routes); shared `TelemetryEvent` shape lives in `site/src/lib/telemetry-event.ts` and is mirrored/validated in Rust.
+**Tech stack (extends Phase 1):** Astro 5 switched to `output: 'server'` with `@astrojs/cloudflare` (per-route `prerender` boundaries keep content static); React 19 (the Phase-1 pin, required by `@react-three/fiber` v9); `@react-three/fiber` + `@react-three/drei` + `three` (drei `<Line>` is a `Line2`/`LineMaterial`); `maath` is available (Phase-1 dep) but the per-frame smoothing is a hand-rolled, unit-tested `dampScalar` (same exponential `damp` model, dependency-light) so the math is testable without R3F; `zustand`; Vitest (unit) + Playwright (e2e/a11y) + `@axe-core/playwright`; Wrangler. Backend logic under `edge/src/telemetry/` (Rust pure-logic crate module + shared TS schema mirror) and `site/src/pages/api/` (SSE + demo routes); shared `TelemetryEvent` shape lives in `site/src/lib/telemetry-event.ts` and is mirrored/validated in Rust.
 
 ## Global Constraints
 
@@ -193,7 +193,7 @@ git commit -m "feat(telemetry): shared TelemetryEvent schema + validator"
   - `impl TelemetryEvent { pub fn validate(&self) -> Result<(), String>; pub fn to_json(&self) -> Result<String, serde_json::Error>; }`
   - `pub const NODE_IDS: [&str; 7]` and `pub const EDGE_IDS: [&str; 6]` (mirroring `GRAPH_NODES`/`GRAPH_EDGES` ids verbatim).
 
-**Note:** uses `serde` + `serde_json` (already in the Phase-2 edge `Cargo.toml`). Pure logic — no `worker` imports here, so it unit-tests with plain `cargo test` (no WASM).
+**Note:** uses `serde` + `serde_json` (already in the Phase-2 edge `Cargo.toml`). Pure logic — no `worker` imports here, so it unit-tests with plain `cargo test` (no WASM). (Task 3's `emit_phase` will additionally need the `worker` crate's `queue` feature enabled — call that out there, not here.)
 
 - [ ] **Step 1: Write the failing test (inline)**
 
@@ -370,7 +370,8 @@ git commit -m "feat(edge): TelemetryEvent Rust mirror + validator"
 **Files:**
 - Create: `edge/src/telemetry/emit.rs`
 - Modify: `edge/src/telemetry/mod.rs` (`pub mod emit;`)
-- Modify: `edge/wrangler.toml` (add a `[[queues.producers]]` binding `TELEMETRY_QUEUE` → `lifecycle-telemetry`)
+- Modify: `edge/wrangler.jsonc` (Phase 2 created `wrangler.jsonc`, not `.toml`; add a `queues.producers` binding `TELEMETRY_QUEUE` → `lifecycle-telemetry`)
+- Modify: `edge/Cargo.toml` (enable the `worker` crate's `queue` feature)
 - Modify (seam, minimal): the Phase-2 engine's phase-transition site(s) — add a single `telemetry::emit::emit_phase(...)` call. Document the exact call sites in a `// PHASE-7 SEAM` comment.
 - Test: in `edge/src/telemetry/emit.rs` (`#[cfg(test)]`) — test the pure **builder**, not the Queue I/O.
 
@@ -380,6 +381,8 @@ git commit -m "feat(edge): TelemetryEvent Rust mirror + validator"
   - `pub async fn emit_phase(env: &worker::Env, ev: &TelemetryEvent) -> worker::Result<()>` — serializes and `send`s to the `TELEMETRY_QUEUE` producer binding. (I/O wrapper; **not** unit-tested here — covered by the `wrangler dev` manual check below.)
 
 **Why a builder seam:** Phase 2 owns engine flow; Phase 7 must not rewrite it. The builder is pure and testable; `emit_phase` is the thin Queue write the engine calls. If the Queue send fails, **swallow and log** — telemetry must never break the auth hot path (fail-open for *observability only*, never for authz).
+
+**Cargo feature:** `env.queue(...)` requires the `worker` crate's `queue` feature. Phase 2 pins `worker` 0.8 without it, so add `features = ["queue"]` to the existing `worker` dependency in `edge/Cargo.toml` (don't bump the version). The pure `build_event` test below does not need it; `emit_phase` (wasm-only) does.
 
 - [ ] **Step 1: Write the failing test (inline)**
 
@@ -461,11 +464,13 @@ Add to `edge/src/telemetry/mod.rs`:
 pub mod emit;
 ```
 
-Add the Queue producer binding to `edge/wrangler.toml`:
-```toml
-[[queues.producers]]
-binding = "TELEMETRY_QUEUE"
-queue = "lifecycle-telemetry"
+Add the Queue producer binding to `edge/wrangler.jsonc` (JSONC — Phase 2's format; merge into the existing top-level object alongside `durable_objects`):
+```jsonc
+  "queues": {
+    "producers": [
+      { "binding": "TELEMETRY_QUEUE", "queue": "lifecycle-telemetry" }
+    ]
+  }
 ```
 
 In the Phase-2 engine, at each phase boundary (request received, authn done, authz decided, lifecycle written, federation token issued, complete/error), add:
@@ -475,7 +480,7 @@ let _ = crate::telemetry::emit::emit_phase(&env, &crate::telemetry::emit::build_
     seq, now_ms, "edge", Some("idp-edge"), crate::telemetry::TelemetryPhase::Authn, "code exchange",
 )).await;
 ```
-(Adjust `node`/`edge`/`phase`/`label` per call site; `seq` is a per-request monotonic counter; `now_ms` from `worker::Date::now().as_millis() as u64`.)
+(Adjust `node`/`edge`/`phase`/`label` per call site; `seq` is a per-request monotonic counter; `now_ms` from `worker::Date::now().as_millis() as u64`.) Because `emit_phase` is `#[cfg(target_arch = "wasm32")]`, only insert this call at engine sites that are themselves wasm-only (the Worker request path) — never inside a `#[cfg(test)]`/host-compiled function, or host `cargo test` will fail to resolve `emit_phase`. If a host-compiled site must call it, add a matching `#[cfg(not(target_arch = "wasm32"))]` no-op stub of `emit_phase`.
 
 - [ ] **Step 4: Run it to verify it passes**
 
@@ -495,7 +500,7 @@ npx wrangler dev
 - [ ] **Step 6: Commit**
 
 ```bash
-git add edge/src/telemetry/emit.rs edge/src/telemetry/mod.rs edge/wrangler.toml edge/src
+git add edge/src/telemetry/emit.rs edge/src/telemetry/mod.rs edge/wrangler.jsonc edge/Cargo.toml edge/src
 git commit -m "feat(edge): emit telemetry events to Queue at phase transitions (Phase-2 seam)"
 ```
 
@@ -515,7 +520,7 @@ git commit -m "feat(edge): emit telemetry events to Queue at phase transitions (
   - `since(last_id)` returns events whose numeric `id` is **strictly greater** than `last_id` (for `Last-Event-ID` replay); unknown/empty `last_id` returns the whole ring.
   - `push` evicts the oldest when at capacity (bounded memory — the DO must not grow unbounded).
 
-**Note:** ids are numeric strings; compare by parsed `u64` (fall back to string compare only if unpar. The Rust DO class itself (the `#[durable_object]` glue and subscriber fan-out) is thin and exercised by `wrangler dev`; the **reducer** is the part with logic, so that is what we unit-test.
+**Note:** ids are numeric strings; `since` compares by parsed `u64` and treats an empty or unparseable `last_id` as "replay the whole ring". The Rust DO class itself (the `#[durable_object]` glue and subscriber fan-out) is thin and exercised by `wrangler dev`; the **reducer** is the part with logic, so that is what we unit-test.
 
 - [ ] **Step 1: Write the failing test (inline)**
 
@@ -965,6 +970,10 @@ export const GET: APIRoute = async ({ request, locals }) => {
   const lastEventId = request.headers.get('Last-Event-ID') ?? '';
   const encoder = new TextEncoder();
 
+  // Held so the stream's `cancel` (client disconnect) can tear down the upstream
+  // DO reader — otherwise the subscription leaks for the life of the Worker.
+  let upstreamReader: ReadableStreamDefaultReader<Uint8Array> | null = null;
+
   const stream = new ReadableStream<Uint8Array>({
     async start(controller) {
       controller.enqueue(encoder.encode(retryDirective(3000)));
@@ -984,16 +993,25 @@ export const GET: APIRoute = async ({ request, locals }) => {
       );
 
       const reader = upstream.body!.getReader();
+      upstreamReader = reader;
       const pump = async (): Promise<void> => {
-        const { done, value } = await reader.read();
-        if (done) {
-          controller.close();
-          return;
+        try {
+          const { done, value } = await reader.read();
+          if (done) {
+            controller.close();
+            return;
+          }
+          controller.enqueue(value);
+          return pump();
+        } catch {
+          // Client gone / reader cancelled — stop pumping.
         }
-        controller.enqueue(value);
-        return pump();
       };
       void pump();
+    },
+    cancel() {
+      // Client disconnected: release the upstream DO subscription.
+      void upstreamReader?.cancel();
     },
   });
 
@@ -1118,6 +1136,16 @@ describe('applyEvent (pure reducer)', () => {
     expect(state.log![state.log!.length - 1]!.id).toBe('60');
     expect(state.log![0]!.id).toBe('11');
   });
+  it('ignores replayed events not newer than lastEventId (no double-log)', () => {
+    let state = { ...initialTelemetryState(), ...applyEvent(initialTelemetryState(), ev('5')) };
+    const before = state.log!.length;
+    // Reconnect replays id 5 again (Last-Event-ID) → no-op.
+    const replay = applyEvent(state, ev('5'));
+    expect(Object.keys(replay)).toHaveLength(0);
+    state = { ...state, ...replay };
+    expect(state.log!.length).toBe(before);
+    expect(state.lastEventId).toBe('5');
+  });
 });
 
 describe('useTelemetryStore', () => {
@@ -1192,11 +1220,21 @@ export function initialTelemetryState(): Pick<
   };
 }
 
-/** Pure reducer: returns the state slice to merge after an event. */
+/**
+ * Pure reducer: returns the state slice to merge after an event.
+ * Ids are monotonic numeric strings. `Last-Event-ID` replay re-delivers
+ * already-seen events on reconnect, so drop anything not strictly newer than
+ * `lastEventId` (prevents double-logging + duplicate React keys in the table).
+ */
 export function applyEvent(
-  state: Pick<TelemetryState, 'nodes' | 'edges' | 'log'>,
+  state: Pick<TelemetryState, 'nodes' | 'edges' | 'log' | 'lastEventId'>,
   ev: TelemetryEvent,
 ): Partial<TelemetryState> {
+  const prev = Number.parseInt(state.lastEventId, 10);
+  const next = Number.parseInt(ev.id, 10);
+  if (Number.isFinite(prev) && Number.isFinite(next) && next <= prev) {
+    return {}; // already seen (replay) — no-op merge.
+  }
   const nodes = { ...state.nodes, [ev.node]: { intensity: 1, lastTs: ev.ts } };
   const edges = ev.edge
     ? { ...state.edges, [ev.edge]: { pulse: 1, lastTs: ev.ts } }
@@ -1217,7 +1255,7 @@ export const useTelemetryStore = create<TelemetryState>((set, get) => ({
 - [ ] **Step 4: Run it to verify it passes**
 
 Run: `pnpm --dir site test src/lib/telemetry-store.test.ts`
-Expected: PASS (5 tests).
+Expected: PASS (6 tests).
 
 - [ ] **Step 5: Commit**
 
@@ -1400,8 +1438,9 @@ Create `site/src/components/LivePulses.tsx`:
 import { useMemo, useRef } from 'react';
 import { useFrame, useThree } from '@react-three/fiber';
 import { Line } from '@react-three/drei';
+import type { LineMaterial } from 'three-stdlib';
 import * as THREE from 'three';
-import { GRAPH_EDGES, GRAPH_NODES, getNode } from '../lib/graph-model';
+import { GRAPH_EDGES, GRAPH_NODES } from '../lib/graph-model';
 import { nodePositions } from './FlowGraph3D';
 import { dampScalar, decayTarget, isAnimating } from '../lib/anim';
 import { useTelemetryStore } from '../lib/telemetry-store';
@@ -1443,13 +1482,15 @@ export default function LivePulses({ lite = false }: { lite?: boolean }) {
     () => GRAPH_NODES.reduce<Record<string, number>>((a, n, i) => ((a[n.id] = i), a), {}),
     [],
   );
-  const matRefs = useRef<(THREE.LineBasicMaterial | null)[]>([]);
+  // drei <Line> renders a THREE.Line2 backed by LineMaterial (NOT LineBasicMaterial).
+  const matRefs = useRef<(LineMaterial | null)[]>([]);
 
   useFrame((_, dt) => {
     const { current, animating } = stepPulses(useTelemetryStore, Math.min(dt, 1 / 30));
     GRAPH_EDGES.forEach((_e, i) => {
       const mat = matRefs.current[i];
       if (mat) {
+        // LineMaterial.color is a THREE.Color; lerp REST→ACCENT by the damped pulse.
         mat.color.copy(REST).lerp(ACCENT, current[i]);
         mat.opacity = 0.3 + 0.7 * current[i];
         mat.transparent = true;
@@ -1467,8 +1508,8 @@ export default function LivePulses({ lite = false }: { lite?: boolean }) {
           color="#E6E6EC"
           lineWidth={lite ? 2 : 3}
           ref={(l) => {
-            // drei Line exposes its material; capture it for per-frame mutation.
-            matRefs.current[i] = (l as unknown as { material?: THREE.LineBasicMaterial })?.material ?? null;
+            // drei Line (Line2) exposes its LineMaterial; capture it for per-frame mutation.
+            matRefs.current[i] = (l as unknown as { material?: LineMaterial })?.material ?? null;
           }}
         />
       ))}
@@ -1532,7 +1573,7 @@ git commit -m "feat(site): live useFrame pulse layer (shader/material uniform, i
   - `function useTelemetrySource(opts: { enabled: boolean; url?: string }): void` — when `enabled`, constructs **one** `EventSource(url)`, routes `onmessage` → `parseTelemetryEvent` → `useTelemetryStore.getState().ingest` (no React state), sets `connected`, honors `paused` (closes/reopens), and **never** constructs an `EventSource` when `enabled` is false. Cleans up on unmount.
 - `TelemetryTable` produces:
   - `function TelemetryTable(): JSX.Element` — a `<table>` of recent events (from the store via a React selector on `log` — structural, not per-frame) wrapped in an `aria-live="polite"` region announcing the latest event. This is the WCAG source-of-truth data surface.
-- `IdentityGraph` (Phase-1 `{ posterSrc }`) gains internal `paused` wiring and: opens the source only when `mode` ∈ {`svg`, `webgl-lite`, `webgl-full`}; passes `live` to `FlowGraph3D`; renders a visible **Pause** button and the `TelemetryTable`. **`poster` mode opens nothing.** Public prop shape is unchanged (`{ posterSrc: string }`) so the Phase-1 Astro usage in `index.astro` still compiles.
+- `IdentityGraph` (Phase-1 `{ posterSrc }`) gains internal `paused` + `decided` wiring and: opens the source only **after** the capability decision resolves (`decided`) AND `mode` ∈ {`svg`, `webgl-lite`, `webgl-full`}; passes `live` to `FlowGraph3D`; renders a visible **Pause** button and the `TelemetryTable`. The pre-decision SVG baseline does **not** open a stream, so a reduced-motion/Save-Data client (which resolves to `poster`) **never** opens an `EventSource` — not even transiently. **`poster` mode opens nothing.** Public prop shape is unchanged (`{ posterSrc: string }`) so the Phase-1 Astro usage in `index.astro` still compiles.
 
 - [ ] **Step 1: Write the failing tests**
 
@@ -1685,13 +1726,20 @@ const FlowGraph3D = lazy(() => import('./FlowGraph3D'));
 
 export function IdentityGraph({ posterSrc }: { posterSrc: string }) {
   const [mode, setMode] = useState<RenderMode>('svg');
+  // `decided` flips true only after the capability check resolves. The SVG is the
+  // pre-decision baseline, but we MUST NOT open an EventSource on that default —
+  // otherwise a reduced-motion/Save-Data client (which resolves to `poster`) would
+  // briefly open a stream before the decision lands. Gate the source on `decided`.
+  const [decided, setDecided] = useState(false);
   const [visible, setVisible] = useState(false);
   const ref = useRef<HTMLDivElement>(null);
   const paused = useTelemetryStore((s) => s.paused);
   const setPaused = useTelemetryStore((s) => s.setPaused);
 
-  const live = mode === 'svg' || mode === 'webgl-lite' || mode === 'webgl-full';
-  // Stream only in live modes AND while not paused. Poster never opens a source.
+  const live =
+    decided && (mode === 'svg' || mode === 'webgl-lite' || mode === 'webgl-full');
+  // Stream only AFTER the capability decision, in live modes, while not paused.
+  // Poster (reduced-motion / Save-Data) never reaches `live` → never opens a source.
   useTelemetrySource({ enabled: live && !paused });
 
   useEffect(() => {
@@ -1715,7 +1763,10 @@ export function IdentityGraph({ posterSrc }: { posterSrc: string }) {
           return t.tier ?? 0;
         },
       });
-      if (!cancelled) setMode(decideRenderMode(caps));
+      if (!cancelled) {
+        setMode(decideRenderMode(caps));
+        setDecided(true); // unblocks the EventSource gate (only now, post-decision)
+      }
     })();
     return () => { cancelled = true; };
   }, [visible]);
@@ -2017,7 +2068,7 @@ build of `site/`.
     # Record the Performance score below; it MUST be ≥ 95.
 
 Expectations that protect the score (all built in earlier tasks):
-- LCP = the poster `<Image>` (never the canvas); canvas box reserved via `aspect-ratio` (CLS 0).
+- LCP = the static poster image rendered by the island in `poster` mode (the `<img src={posterSrc}>`), never the canvas; the canvas/graph box is reserved via `aspect-ratio` so swapping render modes is CLS 0. (Poster mode is the reduced-motion/Save-Data path — exactly the constrained clients Lighthouse-style audits emulate.)
 - Content pages stay `prerender = true` (zero client JS on content); only `/api/*` is dynamic.
 - Three.js code-split via `React.lazy`; island gated behind IntersectionObserver.
 - `frameloop="demand"` + invalidate-only-while-animating → no idle GPU/CPU churn.
@@ -2055,7 +2106,7 @@ git commit -m "test(site): live-telemetry + axe a11y e2e and documented Lighthou
 - Edge engine emits real events (Phase-2 seam, fail-open) → Task 3 (`emit_phase` + `// PHASE-7 SEAM` call sites). ✓
 - Capability-gated R3F live wiring; SSE→3D without re-render (zustand transient + `useFrame` damp; edge pulse = uniform mutated in `useFrame`; `frameloop="demand"` + invalidate-while-animating then park) → Tasks 8, 9, 10, 11. ✓
 - One `EventSource`, auto-reconnect (`retry:`/`Last-Event-ID`) → Tasks 5/7 (`retryDirective`, `since(last_id)` replay), 11 (single source in hook). ✓
-- Reduced-motion / Save-Data never opens an EventSource; poster is LCP, canvas box `aspect-ratio` (CLS 0) → Task 11 (`enabled` gate, poster mode opens nothing) + Tasks 6/13 (prerender + Lighthouse notes). ✓
+- Reduced-motion / Save-Data never opens an EventSource (not even transiently — the source is gated on the post-decision `decided` flag, and the pre-decision SVG baseline opens nothing); poster is the LCP image, canvas box `aspect-ratio` (CLS 0) → Task 11 (`decided` + `live` gate, poster mode opens nothing) + Tasks 6/13 (prerender + Lighthouse notes). ✓
 - a11y SVG stays source of truth + live data table in an ARIA live region → Task 11 (`TelemetryTable`). ✓
 - Visible Pause; pulse ≤ 3 flashes/sec → Task 11 (Pause button) + Tasks 9/10 (`pulseFlashesPerSecond`, `PULSE_DECAY = 3`). ✓
 - "Run the demo" button → Task 12 (POSTs Task-7 `/api/telemetry/demo`, which triggers the edge demo). ✓

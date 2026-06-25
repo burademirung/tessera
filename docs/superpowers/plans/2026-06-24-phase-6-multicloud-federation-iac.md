@@ -6,7 +6,7 @@
 
 **Architecture:** Terraform owns the multi-cloud identity-trust plane (AWS IAM OIDC provider + web-identity role, GCP Workload Identity Pool + provider with direct `principalSet` access, Azure app registration + federated identity credential + role assignment), all trusting the edge engine's RS256 OIDC issuer with **both `aud` and exact `sub` pinned, never wildcards**. AWS CDK owns one AWS app slice (`AccessReviewStack`). Neither tool's state references the other's resources except as read-only import. A separate one-time `bootstrap/` config provisions the GitHub-Actions CI deploy identities (the chicken-and-egg: CI needs cloud trust to run Terraform, but Terraform creates the *edge-issuer* trust). All resources are ephemeral: CI `apply` → `destroy`, secrets via Terraform ephemeral/write-only values (never in R2 state), tagged `project=ident-fed-demo`, with a `cloud-nuke` reaper backstop (Phase 9 wires the schedule).
 
-**Tech Stack:** Terraform ≥ 1.11 (`mock_provider`, `use_lockfile`, ephemeral/write-only args); providers `hashicorp/aws ~>5.81`, `hashicorp/azuread ~>3.0`, `hashicorp/google ~>6.0`, `cloudflare/cloudflare ~>5.0`; Cloudflare R2 as the `s3` backend; `conftest` (Rego v1) + `trivy config`; Infracost; AWS CDK v2 (`aws-cdk-lib` v2), TypeScript, `cdk-nag` v3, Jest + `aws-cdk-lib/assertions`, pnpm.
+**Tech Stack:** Terraform ≥ 1.11 (`mock_provider`, `use_lockfile`, ephemeral/write-only args); providers `hashicorp/aws ~>5.81`, `hashicorp/azuread ~>3.0`, `hashicorp/google ~>6.0`, `cloudflare/cloudflare ~>5.0`; Cloudflare R2 as the `s3` backend; `conftest` (Rego v1) + `trivy config`; Infracost; AWS CDK v2 (`aws-cdk-lib ~>2.257` — `cdk-nag` v3.0.1 peers on `aws-cdk-lib ^2.257.0` / `constructs ^10.5.1`), TypeScript, `cdk-nag` v3, Jest + `aws-cdk-lib/assertions`, pnpm.
 
 ## Global Constraints
 
@@ -122,7 +122,7 @@ terraform {
   backend "s3" {
     region = "auto"
 
-    use_lockfile = true # S3-native locking (TF >= 1.10). DynamoDB locking is deprecated — never use it.
+    use_lockfile = true # S3-native locking (TF >= 1.11). DynamoDB locking is deprecated — never use it.
 
     skip_credentials_validation = true
     skip_metadata_api_check     = true
@@ -165,6 +165,18 @@ provider "cloudflare" {
 
 Create `terraform/variables.tf` (alphabetized):
 ```hcl
+# ----------------------------------------------------------------------------
+# Cross-phase federation contract (shared with edge Phase 2 / Go Phase 5)
+# ----------------------------------------------------------------------------
+# These canonical values MUST match the edge issuer's federation audiences and
+# the trust config asserted in every module/test. Single source of truth:
+#   issuer                : https://idp.lifecycle.example
+#   aud (AWS)             : sts.amazonaws.com
+#   aud (Azure FIC)       : api://AzureADTokenExchange
+#   aud (GCP provider)    : //iam.googleapis.com/projects/123456789012/locations/global/workloadIdentityPools/lifecycle-pool/providers/lifecycle-oidc
+#   sub convention        : lifecycle:federation:<env>   (exact, no wildcard; <=127 chars)
+# ----------------------------------------------------------------------------
+
 variable "allowed_sub" {
   type        = string
   description = "Exact OIDC subject claim the edge issuer emits for federation. Pinned exact — never a wildcard."
@@ -362,12 +374,14 @@ variable "allowed_sub" {
 
 Create `terraform/modules/aws-oidc-trust/main.tf`:
 ```hcl
-# Thumbprint omitted on purpose: obsolete since 2024-07 with a public CA and
-# Optional in the AWS provider >= 5.81. JWKS must be publicly reachable.
+# thumbprint_list is OMITTED ENTIRELY (not set to []): obsolete since 2024-07
+# with a public CA and made Optional in the AWS provider >= 5.81. An empty list
+# is rejected by the API (at least one thumbprint required if the arg is set),
+# so leave it off and let AWS use its trusted-CA library. JWKS must be publicly
+# reachable.
 resource "aws_iam_openid_connect_provider" "edge" {
-  url             = var.issuer_url
-  client_id_list  = [var.client_id]
-  thumbprint_list = []
+  url            = var.issuer_url
+  client_id_list = [var.client_id]
 }
 
 data "aws_iam_policy_document" "trust" {
@@ -699,7 +713,8 @@ run "fic_pins_exact_issuer_subject_audience" {
 run "fic_has_propagation_delay" {
   command = plan
 
-  # Propagation delay+retry: a time_sleep gates the role assignment.
+  # Propagation delay: a time_sleep gates the role assignment (IaC-side half of
+  # the delay+retry mitigation; the AADSTS70021 retry is runtime, in the consumer).
   assert {
     condition     = time_sleep.fic_propagation.create_duration == "60s"
     error_message = "must build in an FIC propagation delay (else AADSTS70021)"
@@ -811,8 +826,13 @@ resource "azuread_application_federated_identity_credential" "edge" {
   audiences      = [var.audience]
 }
 
-# Propagation delay+retry: new FICs take minutes to propagate; calling too soon
-# yields AADSTS70021. Gate the downstream role assignment behind a delay.
+# FIC propagation: a newly created FIC takes time to propagate through Entra;
+# a token exchange against it too soon yields AADSTS70021. This time_sleep gates
+# the downstream role assignment so the FIC is settled by the time anything
+# depends on it. NOTE: the AADSTS70021 *retry* proper lives at token-exchange
+# time in the consumer (azure/login@v2 / ARM_USE_OIDC), not in Terraform — TF
+# never performs the exchange. The delay here is the IaC-side half of the
+# "delay + retry" mitigation; the runtime retry is wired with the edge exchange.
 resource "time_sleep" "fic_propagation" {
   create_duration = var.fic_propagation_delay
   depends_on      = [azuread_application_federated_identity_credential.edge]
@@ -950,6 +970,10 @@ Append to `terraform/providers.tf`:
 ```hcl
 provider "azurerm" {
   features {}
+  # azurerm v4 REQUIRES a subscription id. Supplied via the ARM_SUBSCRIPTION_ID
+  # env var in CI (alongside the OIDC creds), so it stays out of the config and
+  # out of state. `terraform validate` / `terraform test` (mock_provider) do not
+  # need it; only a real plan/apply does.
 }
 ```
 
@@ -1403,9 +1427,10 @@ locals {
 
 # ---- AWS: GitHub OIDC provider + CI deploy role ----
 resource "aws_iam_openid_connect_provider" "github" {
-  url             = local.github_issuer
-  client_id_list  = ["sts.amazonaws.com"]
-  thumbprint_list = [] # obsolete since 2024-07
+  url            = local.github_issuer
+  client_id_list = ["sts.amazonaws.com"]
+  # thumbprint_list omitted entirely (obsolete since 2024-07; an empty list is
+  # rejected by the API). AWS trusts the GitHub OIDC public CA natively.
 }
 
 data "aws_iam_policy_document" "ci_trust" {
@@ -1569,16 +1594,16 @@ Create `cdk/package.json`:
   "devDependencies": {
     "@types/jest": "^29.5.12",
     "@types/node": "^20.14.0",
-    "aws-cdk": "^2.150.0",
+    "aws-cdk": "^2.1027.0",
     "jest": "^29.7.0",
     "ts-jest": "^29.2.0",
     "ts-node": "^10.9.2",
     "typescript": "^5.5.0"
   },
   "dependencies": {
-    "aws-cdk-lib": "^2.150.0",
-    "cdk-nag": "^3.0.0",
-    "constructs": "^10.3.0"
+    "aws-cdk-lib": "^2.257.0",
+    "cdk-nag": "^3.0.1",
+    "constructs": "^10.5.1"
   }
 }
 ```
@@ -1704,8 +1729,12 @@ export function buildApp(): { app: App; stack: AccessReviewStack } {
   return { app, stack };
 }
 
-// Synthesize when run as the CDK app entrypoint.
-buildApp().app.synth();
+// Synthesize only when run as the CDK app entrypoint (ts-node bin/app.ts),
+// NOT when imported by Jest — otherwise every test triggers a full synth +
+// cdk-nag pass on import.
+if (require.main === module) {
+  buildApp().app.synth();
+}
 ```
 
 > The test in Step 3 imports `buildApp` but `AccessReviewStack` does not exist yet; create a minimal placeholder so the scaffold compiles, then flesh it out in Task 9. Create `cdk/lib/access-review-stack.ts`:
@@ -1748,7 +1777,7 @@ git commit -m "feat(cdk): app scaffold with pinned env + cdk-nag v3 plugin"
 
 **Interfaces:**
 - Consumes: `AccessReviewStackProps extends StackProps` (no extra props beyond `env`/`tags`).
-- Produces: a DynamoDB table (PAY_PER_REQUEST, `RemovalPolicy.DESTROY`), a Step Functions state machine that writes a review record to the table, and an EventBridge rule (scheduled) targeting the state machine. cdk-nag IAM5 / SF-logging findings acknowledged with reasons via `Validations.of(construct).acknowledge(...)`.
+- Produces: a DynamoDB table (PAY_PER_REQUEST, `RemovalPolicy.DESTROY`), a Step Functions state machine that writes a review record to the table, and an EventBridge rule (scheduled) targeting the state machine. The cdk-nag IAM5 `Resource::*` finding on the L2-generated SFN role is acknowledged (per-finding `RuleId[FindingId]`) with a reason via `Validations.of(construct).acknowledge(...)`; SFN logging + X-Ray tracing are enabled so SF1/SF2 do not fire, and PITR is enabled so DDB3 does not fire.
 
 - [ ] **Step 1: Write the failing fine-grained + snapshot test**
 
@@ -1820,6 +1849,7 @@ import { Rule, Schedule } from 'aws-cdk-lib/aws-events';
 import { SfnStateMachine } from 'aws-cdk-lib/aws-events-targets';
 import {
   DefinitionBody,
+  JsonPath,
   LogLevel,
   StateMachine,
   StateMachineType,
@@ -1838,18 +1868,19 @@ export class AccessReviewStack extends Stack {
       sortKey: { name: 'entitlementId', type: AttributeType.STRING },
       billingMode: BillingMode.PAY_PER_REQUEST,
       encryption: TableEncryption.AWS_MANAGED,
-      pointInTimeRecovery: true,
+      // `pointInTimeRecovery: true` is deprecated; use the spec form.
+      pointInTimeRecoverySpecification: { pointInTimeRecoveryEnabled: true },
       removalPolicy: RemovalPolicy.DESTROY,
     });
 
     // --- Step Functions: write one review record ---
+    // Values come from the execution input via JSONPath. `fromString('$.x')`
+    // would store the LITERAL "$.x"; wrap in JsonPath.stringAt() to resolve it.
     const recordReview = new DynamoPutItem(this, 'RecordReview', {
       table,
       item: {
-        reviewId: DynamoAttributeValue.fromString.bind(null)
-          ? DynamoAttributeValue.fromString('$.reviewId')
-          : DynamoAttributeValue.fromString('$.reviewId'),
-        entitlementId: DynamoAttributeValue.fromString('$.entitlementId'),
+        reviewId: DynamoAttributeValue.fromString(JsonPath.stringAt('$.reviewId')),
+        entitlementId: DynamoAttributeValue.fromString(JsonPath.stringAt('$.entitlementId')),
         status: DynamoAttributeValue.fromString('pending'),
       },
     });
@@ -1874,34 +1905,21 @@ export class AccessReviewStack extends Stack {
     });
 
     // --- cdk-nag v3 acknowledgements (with reasons) ---
-    // The DynamoPutItem task role uses a resource-scoped action that cdk-nag
-    // flags as IAM5; it is already scoped to this table only.
+    // v3 has NO bulk suppression: each finding must be acknowledged by its exact
+    // `RuleId[FindingId]` id (prefix matching on a bare rule id is unsupported).
+    // The L2-generated Step Functions execution role emits a Resource:* IAM5
+    // finding scoped to sub-resources of this table only. The exact FindingId
+    // string must match the synth/`cdk synth` error output; if it differs, copy
+    // the bracketed id verbatim from the error and update this line.
     Validations.of(stateMachine).acknowledge({
-      id: 'AwsSolutions-IAM5',
+      id: 'AwsSolutions-IAM5[Resource::*]',
       reason:
-        'Step Functions execution role is generated by the L2 construct and scoped to the single review table and its own log group; wildcard is on sub-resources of those ARNs only.',
+        'Step Functions execution role is generated by the L2 construct and scoped to the single review table and its own log group; the wildcard is on sub-resources of those ARNs only.',
     });
-    Validations.of(table).acknowledge({
-      id: 'AwsSolutions-DDB3',
-      reason:
-        'Ephemeral demo table (RemovalPolicy.DESTROY); point-in-time recovery is enabled but this is a throwaway access-review demo, not a system of record.',
-    });
+    // Note: AwsSolutions-DDB3 (point-in-time recovery) does NOT fire here because
+    // PITR is enabled on the table above, so no acknowledgement is needed.
   }
 }
-```
-
-> If the `DynamoAttributeValue.fromString.bind` line above is rejected by the linter, simplify it to `reviewId: DynamoAttributeValue.fromString('$.reviewId'),` — it is written plainly there; the ternary is only illustrative and should be removed. Use the plain form.
-
-Correct the `recordReview` item to the plain form:
-```ts
-    const recordReview = new DynamoPutItem(this, 'RecordReview', {
-      table,
-      item: {
-        reviewId: DynamoAttributeValue.fromString('$.reviewId'),
-        entitlementId: DynamoAttributeValue.fromString('$.entitlementId'),
-        status: DynamoAttributeValue.fromString('pending'),
-      },
-    });
 ```
 
 - [ ] **Step 4: Run it to verify it passes**
@@ -1920,7 +1938,7 @@ Run:
 cd /Users/vladinirkamenev/Documents/projects/lifecycle/cdk
 pnpm exec cdk synth --quiet
 ```
-Expected: synth succeeds; any remaining cdk-nag findings are either acknowledged (IAM5/DDB3) or absent. If a NEW error appears, add a `Validations.of(...).acknowledge({ id, reason })` with a real justification (never blanket-suppress), then re-synth.
+Expected: synth succeeds; any remaining cdk-nag findings are either acknowledged (the IAM5 `Resource::*` finding) or absent. If a NEW finding appears, copy its exact `RuleId[FindingId]` from the error and add a `Validations.of(...).acknowledge({ id, reason })` with a real justification (v3 has no bulk/prefix suppression — never blanket-suppress), then re-synth.
 
 - [ ] **Step 6: Commit**
 
@@ -2251,9 +2269,9 @@ git commit -m "docs+ci(iac): ephemeral destroy path, reaper note, plan/apply/des
 - All four providers pinned `~>` + committed lockfile (`providers lock` linux_amd64+darwin_arm64) + providers passed explicitly → Task 1 (`terraform.tf`), Task 5 (root `required_providers`, `providers = {}` maps, lockfile gen). ✓
 - R2 `s3` backend with the six skip/path flags + `use_lockfile=true` (TF ≥ 1.11), DynamoDB avoided, HCP fallback noted → Task 1 (`backend.tf`), Task 7 (bootstrap backend), Task 11 (docs). ✓
 - Pin `aud` + EXACT `sub`, no wildcards → asserted in every module test (Tasks 2/3/4) and the conftest guardrail (Task 6) and the bootstrap CI test (Task 7). ✓
-- AWS drop `thumbprint_list` → Task 2 (`thumbprint_list = []` with comment), Task 7. ✓
+- AWS drop `thumbprint_list` → Task 2 (argument OMITTED entirely — an empty list is API-rejected), Task 7 (same). ✓
 - GCP direct resource access `principalSet`, no SA, `exp − iat ≤ 24h` → Task 3 (`google_project_iam_member` principalSet, no SA; the 24h bound is enforced by the edge token-issuance, asserted indirectly via the CEL condition + documented). ✓ (Note: `exp − iat ≤ 24h` is an edge-IdP token property from Phase 2; Terraform pins issuer/aud/sub, which is the IaC-side control.)
-- Azure app-reg not UAMI + FIC propagation delay+retry + 20-FIC cap + RS256 → Task 4 (`azuread_application`, `time_sleep` propagation, audience validation; 20-FIC cap and RS256 are documented constraints — one FIC is created, well under 20, and RS256 is the edge issuer's signing alg). ✓
+- Azure app-reg not UAMI + FIC propagation delay (+ runtime retry) + 20-FIC cap + RS256 → Task 4 (`azuread_application`, `time_sleep` propagation gating the role assignment with an explicit note that the AADSTS70021 retry is runtime/consumer-side since TF never performs the exchange, audience validation; 20-FIC cap and RS256 are documented constraints — one FIC is created, well under 20, and RS256 is the edge issuer's signing alg). ✓
 - Ephemeral apply→destroy, no workspaces → Task 11 (docs + destroy workflow), `prevent_destroy` off. ✓
 - Secrets via TF ephemeral/write-only, never in state → Task 11 docs (the edge issuer material; no secret resource is committed to state in any module). ✓
 - `default_tags{project=ident-fed-demo}` + cloud-nuke reaper → Task 1 (`providers.tf` default_tags), Task 7 (bootstrap default_tags), Task 11 (reaper note, Phase 9 schedule). ✓
@@ -2268,7 +2286,7 @@ git commit -m "docs+ci(iac): ephemeral destroy path, reaper note, plan/apply/des
 - Ephemeral destroy path documented + tag-scoped reaper note (Phase 9 wires schedule) → Task 11. ✓
 - Deferred to later phases (correctly out of scope): edge-IdP token issuance / `exp−iat≤24h` enforcement (Phase 2); SHA-pinning + harden-runner + SLSA attestations + the EventBridge reaper schedule (Phase 9 — workflows here leave explicit pin notes); wiring the live federation exchange into the 3D telemetry (Phase 7).
 
-**Placeholder scan:** No "TBD/TODO/handle later" in committed code. Every code step is complete real HCL/TypeScript/Rego/YAML/bash. The single illustrative ternary in Task 9 Step 3 is explicitly called out and immediately replaced with the plain form in the same step. Workflow `@<tag>` action refs carry an explicit "SHA-pin before first run (Phase 9)" note — the deliberate, assigned deferral, matching the Phase 1 precedent.
+**Placeholder scan:** No "TBD/TODO/handle later" in committed code. Every code step is complete real HCL/TypeScript/Rego/YAML/bash. The Task 9 `DynamoPutItem` item uses `DynamoAttributeValue.fromString(JsonPath.stringAt('$.x'))` so input values resolve at runtime (a bare `'$.x'` literal would be stored verbatim). Workflow `@<tag>` action refs carry an explicit "SHA-pin before first run (Phase 9)" note — the deliberate, assigned deferral, matching the Phase 1 precedent.
 
 **Module input/output name consistency across root + tests:**
 - `aws-oidc-trust` inputs `issuer_url`/`issuer_host_path`/`client_id`/`allowed_sub` and outputs `role_arn`/`oidc_provider_arn`/`assume_role_policy_json` — declared in Task 2, consumed verbatim by the root `module "aws_oidc_trust"` (Task 5) and asserted by both the module test (Task 2) and the root test (Task 5, `module.aws_oidc_trust.assume_role_policy_json`). ✓

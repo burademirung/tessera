@@ -17,7 +17,7 @@
   worker-macros = "0.8"
   web-sys = { version="0.3", features=["WorkerGlobalScope","Crypto","SubtleCrypto","CryptoKey","CryptoKeyPair"] }
   jsonwebtoken = { version="10.4", default-features=false, features=["use_pem","rust_crypto"] }
-  ed25519-dalek = { version="2.2", default-features=false, features=["rand_core","pkcs8","zeroize"] }
+  ed25519-dalek = { version="2.2", default-features=false, features=["rand_core","pkcs8","pem","zeroize"] }
   pasetors = { version="0.7", default-features=false, features=["std","v4","paserk"] }
   oauth2 = { version="5.0", default-features=false }
   openidconnect = { version="4.0", default-features=false }
@@ -74,8 +74,14 @@ wasm-bindgen-futures = "0.4"
 js-sys = "0.3"
 console_error_panic_hook = "0.1"
 jsonwebtoken = { version = "10.4", default-features = false, features = ["use_pem", "rust_crypto"] }
-ed25519-dalek = { version = "2.2", default-features = false, features = ["rand_core", "pkcs8", "zeroize"] }
-rsa = { version = "0.9", default-features = false }
+# `pem` is required for `to_pkcs8_pem`/`to_public_key_pem` (the `pkcs8` feature
+# alone only provides DER); `pem` transitively enables `alloc` + `pkcs8`.
+ed25519-dalek = { version = "2.2", default-features = false, features = ["rand_core", "pkcs8", "pem", "zeroize"] }
+# NOTE: RS256 *verification* is provided by jsonwebtoken's `rust_crypto` backend
+# (DecodingKey::from_rsa_pem); RS256 *signing* is done via WebCrypto (Task 5).
+# The standalone `rsa` crate (verify-only, per RUSTSEC-2023-0071) is NOT needed in
+# Phase 2 — add it only if/when a raw RSA verify path is required, with an alloc
+# feature enabled (`default-features=false` alone does not build).
 pasetors = { version = "0.7", default-features = false, features = ["std", "v4", "paserk"] }
 oauth2 = { version = "5.0", default-features = false }
 openidconnect = { version = "4.0", default-features = false }
@@ -174,20 +180,25 @@ mod tests {
 
 - [ ] **Step 6: Write the crate root + Worker entrypoint**
 
-Create `edge/src/lib.rs`:
+Create `edge/src/lib.rs`. The pure modules build on the host so `cargo test` runs
+without WASM; the Worker entrypoint (`#[event]` handlers, `worker::*`) is gated to
+`wasm32` so it never has to compile on the host test target:
 ```rust
-use worker::*;
-
 pub mod util;
 
-#[event(start)]
-fn start() {
-    console_error_panic_hook::set_once();
-}
+#[cfg(target_arch = "wasm32")]
+mod worker_entry {
+    use worker::*;
 
-#[event(fetch)]
-async fn fetch(_req: Request, _env: Env, _ctx: Context) -> Result<Response> {
-    Response::ok("lifecycle-edge: ok")
+    #[event(start)]
+    fn start() {
+        console_error_panic_hook::set_once();
+    }
+
+    #[event(fetch)]
+    async fn fetch(_req: Request, _env: Env, _ctx: Context) -> Result<Response> {
+        Response::ok("lifecycle-edge: ok")
+    }
 }
 ```
 
@@ -388,7 +399,8 @@ Expected: FAIL to **compile** (`cannot find type VerifyAlg`, `cannot find functi
 
 Prepend to `edge/src/jwt.rs` (above the `#[cfg(test)]` module):
 ```rust
-use jsonwebtoken::{Algorithm, DecodingKey, Validation, decode, decode_header};
+use crate::util::b64url_decode;
+use jsonwebtoken::{Algorithm, DecodingKey, Validation, decode};
 use serde_json::Value;
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -410,6 +422,17 @@ impl VerifyAlg {
             VerifyAlg::RS256 => "RS256",
         }
     }
+}
+
+/// Read the raw JOSE header as JSON WITHOUT trusting it. We parse the header
+/// ourselves (rather than `jsonwebtoken::decode_header`) so that a forged
+/// `alg:"none"` — which is not a variant of `jsonwebtoken::Algorithm` and would
+/// otherwise surface as an opaque `InvalidAlgorithmName` — is rejected with a
+/// deterministic, controlled error message.
+fn raw_header(token: &str) -> Result<Value, String> {
+    let part = token.split('.').next().ok_or("malformed token")?;
+    let bytes = b64url_decode(part)?;
+    serde_json::from_slice(&bytes).map_err(|e| format!("bad header json: {e}"))
 }
 
 #[derive(Clone, Debug)]
@@ -434,8 +457,12 @@ pub struct VerifiedClaims {
 
 /// Read the declared `alg` from the JWS header WITHOUT trusting it for verification.
 pub fn parse_header_alg(token: &str) -> Result<String, String> {
-    let header = decode_header(token).map_err(|e| format!("bad header: {e}"))?;
-    Ok(format!("{:?}", header.alg))
+    let header = raw_header(token)?;
+    header
+        .get("alg")
+        .and_then(Value::as_str)
+        .map(str::to_string)
+        .ok_or_else(|| "missing alg in header".to_string())
 }
 
 /// Verify a JWT against exactly one expected algorithm (one-key-one-alg).
@@ -446,14 +473,20 @@ pub fn verify_jwt(
     params: &VerifyParams,
     now: u64,
 ) -> Result<VerifiedClaims, String> {
-    // 1. Header gate: reject `none` and anything other than the single expected alg
-    //    BEFORE handing the token to the verifier (defeats RS256<->HS256 / none).
-    let header = decode_header(token).map_err(|e| format!("bad header: {e}"))?;
-    let declared = format!("{:?}", header.alg);
+    // 1. Header gate: parse the RAW header ourselves and reject `alg:none` and
+    //    anything other than the single expected alg BEFORE handing the token to
+    //    the verifier (defeats RS256<->HS256 confusion and `none`). We do NOT use
+    //    `decode_header` here: an `alg:"none"` is not a `jsonwebtoken::Algorithm`
+    //    variant and would otherwise surface as an opaque parse error.
+    let header = raw_header(token)?;
+    let declared = header
+        .get("alg")
+        .and_then(Value::as_str)
+        .ok_or("missing alg in header")?;
     if declared.eq_ignore_ascii_case("none") {
         return Err("alg `none` is forbidden".to_string());
     }
-    if header.alg != params.alg.to_jwt() {
+    if declared != params.alg.header_name() {
         return Err(format!(
             "alg mismatch: declared {declared}, expected {}",
             params.alg.header_name()
@@ -462,23 +495,22 @@ pub fn verify_jwt(
 
     // 2. typ check (RFC 8725 — require explicit token type at validation).
     if let Some(expected) = &params.expected_typ {
-        match &header.typ {
+        match header.get("typ").and_then(Value::as_str) {
             Some(t) if t.eq_ignore_ascii_case(expected) => {}
             other => return Err(format!("typ mismatch: {other:?} != {expected}")),
         }
     }
 
-    // 3. Strict validation, allow-list of exactly one alg, with our injected clock.
+    // 3. Strict validation, allow-list of exactly one alg.
+    //    `jsonwebtoken` validates exp/nbf against the *system clock*; on WASM we
+    //    cannot rely on it, so we disable its built-in time checks here and
+    //    enforce our injected `now` against exp/nbf below.
     let mut v = Validation::new(params.alg.to_jwt());
     v.algorithms = vec![params.alg.to_jwt()];
     v.set_issuer(&[&params.issuer]);
     v.set_audience(&[&params.audience]);
     v.set_required_spec_claims(&["exp", "iss", "aud", "sub"]);
     v.leeway = params.leeway_secs;
-    v.validate_exp = true;
-    v.validate_nbf = true;
-    // jsonwebtoken validates exp/nbf against the system clock; on WASM we cannot
-    // rely on it, so disable its time check and enforce our injected `now` below.
     v.validate_exp = false;
     v.validate_nbf = false;
 
@@ -767,9 +799,9 @@ mod tests {
 
     fn auds() -> CloudAudiences {
         CloudAudiences {
-            aws: "arn:aws:iam::111122223333:oidc-provider/idp.lifecycle.example".into(),
+            aws: "sts.amazonaws.com".into(),
             azure: "api://AzureADTokenExchange".into(),
-            gcp: "//iam.googleapis.com/projects/42/locations/global/workloadIdentityPools/lc/providers/edge".into(),
+            gcp: "//iam.googleapis.com/projects/123456789012/locations/global/workloadIdentityPools/lifecycle-pool/providers/lifecycle-oidc".into(),
         }
     }
 
@@ -1077,13 +1109,8 @@ fn subtle() -> Result<SubtleCrypto, String> {
     let global: WorkerGlobalScope = js_sys::global()
         .dyn_into()
         .map_err(|_| "no WorkerGlobalScope".to_string())?;
-    global
-        .crypto()
-        .map_err(|_| "no crypto".to_string())?
-        .subtle()
-        .map_err(|_| "no subtle".to_string())
-        .map(|s| s)
-        .and_then(|s: SubtleCrypto| Ok(s))
+    let crypto = global.crypto().map_err(|_| "no crypto".to_string())?;
+    Ok(crypto.subtle())
 }
 
 fn rsa_pss_or_pkcs1_algo() -> Object {
@@ -1102,13 +1129,15 @@ pub async fn import_rsa_pkcs8(pkcs8_der: &[u8]) -> Result<CryptoKey, String> {
     let key_data = Uint8Array::from(pkcs8_der);
     let usages = js_sys::Array::new();
     usages.push(&JsValue::from_str("sign"));
+    // `import_key_with_object` wants `key_data: &Object`; a `Uint8Array` IS-A
+    // `Object`, so reinterpret the reference (no copy).
     let promise = subtle
         .import_key_with_object(
             "pkcs8",
-            &key_data.into(),
+            key_data.unchecked_ref::<Object>(),
             &rsa_pss_or_pkcs1_algo(),
             false,
-            &usages,
+            usages.as_ref(),
         )
         .map_err(|e| format!("import_key: {e:?}"))?;
     let key = JsFuture::from(promise)
@@ -1121,14 +1150,15 @@ pub async fn import_rsa_pkcs8(pkcs8_der: &[u8]) -> Result<CryptoKey, String> {
 /// Sign the JWS signing-input (`base64url(header).base64url(payload)`) with RS256.
 pub async fn sign_rs256(key: &CryptoKey, signing_input: &[u8]) -> Result<Vec<u8>, String> {
     let subtle = subtle()?;
-    let data = Uint8Array::from(signing_input);
+    // `sign_with_object_and_u8_array` takes `data: &[u8]` (not `&mut`).
     let promise = subtle
-        .sign_with_object_and_u8_array(&rsa_pss_or_pkcs1_algo(), key, &mut data.to_vec())
+        .sign_with_object_and_u8_array(&rsa_pss_or_pkcs1_algo(), key, signing_input)
         .map_err(|e| format!("sign: {e:?}"))?;
     let result = JsFuture::from(promise)
         .await
         .map_err(|e| format!("sign await: {e:?}"))?;
-    let buf = js_sys::Uint8Array::new(&result);
+    // SubtleCrypto.sign resolves to an ArrayBuffer; wrap it as a Uint8Array view.
+    let buf = Uint8Array::new(&result);
     Ok(buf.to_vec())
 }
 
@@ -1174,7 +1204,7 @@ fn serde_wasm_bindgen_from(v: &JsValue) -> Result<Value, String> {
     serde_json::from_str(&s).map_err(|e| e.to_string())
 }
 ```
-> Note: `import_key_with_object` / `sign_with_object_and_u8_array` / `export_key` names follow the `web_sys::SubtleCrypto` 0.3 bindings; if a binding name differs in the pinned `web-sys` version, confirm with `cargo doc -p web-sys --open` and adjust the call site (signature shape is identical). Verify at the `wrangler dev` step in Task 11.
+> Note: `import_key_with_object` / `sign_with_object_and_u8_array` / `export_key` names follow the `web_sys::SubtleCrypto` 0.3 bindings; if a binding name differs in the pinned `web-sys` version, confirm with `cargo doc -p web-sys --open` and adjust the call site (signature shape is identical). Verify at the `wrangler dev` integration check.
 
 - [ ] **Step 6: Verify the full crate still compiles for WASM**
 
@@ -1194,19 +1224,20 @@ git commit -m "feat(edge): WebCrypto RS256 signer + RSA public JWK + two-key JWK
 
 ---
 
-### Task 6: Discovery endpoint + JWKS route wiring
+### Task 6: Discovery + JWKS + federation mint (`POST /federate`) route wiring
 
 **Files:**
 - Create: `edge/src/discovery.rs` (pure discovery-document builder)
-- Modify: `edge/src/lib.rs` (route `/.well-known/openid-configuration` and `/jwks`)
+- Modify: `edge/src/lib.rs` (route `/.well-known/openid-configuration`, `/jwks`, and `POST /federate`)
 - Test: `edge/src/discovery.rs` (`#[cfg(test)]` module)
 
 **Interfaces:**
-- Consumes: `jwks::{assemble_jwks, validate_jwks_invariants}` (Task 5).
+- Consumes: `jwks::{assemble_jwks, validate_jwks_invariants}` (Task 5); `federation::{Cloud, CloudAudiences, parse_cloud, build_federation_claims}` (Task 4); `webcrypto_rsa::sign_rs256` (Task 5, wasm-only).
 - Produces:
   - `pub struct IssuerConfig { pub issuer: String }`
   - `pub fn openid_configuration(cfg: &IssuerConfig) -> serde_json::Value` (issuer byte-identical; `jwks_uri`, `authorization_endpoint`, `token_endpoint`, `introspection_endpoint`, `id_token_signing_alg_values_supported: ["EdDSA","RS256"]`, `response_types_supported: ["code"]`, `code_challenge_methods_supported: ["S256"]`)
   - `pub fn validate_discovery(doc: &serde_json::Value, expected_issuer: &str) -> Result<(), String>`
+  - **`POST /federate`** route (wasm): request body `{ "cloud": "aws"|"azure"|"gcp", "sub": "<≤127 chars>" }` → response `{ "token": "<RS256 JWT>" }`. Mints the per-cloud RS256 token (distinct `aud` per cloud: AWS `sts.amazonaws.com`, Azure `api://AzureADTokenExchange`, GCP provider resource URL) consumed by the Go control plane (Phase 5 Task 12). Also add the pure host-testable helper `pub fn parse_cloud(s: &str) -> Option<Cloud>` to `federation` (Task 4 module) with a `#[cfg(test)]` test asserting `aws`/`azure`/`gcp` parse and unknown returns `None`.
 
 - [ ] **Step 1: Write the failing test**
 
@@ -1316,10 +1347,8 @@ Expected: PASS — `test result: ok. 3 passed`.
 
 - [ ] **Step 5: Wire the routes**
 
-Replace the `fetch` body in `edge/src/lib.rs` with a router that serves discovery and JWKS (JWKS keys come from the runtime in later wiring; this serves the EdDSA key from a Secret-loaded seed plus an empty RSA slot until Task 11 attaches the WebCrypto key):
+Replace the `fetch` body in `edge/src/lib.rs` with a router that serves discovery, JWKS, and the `POST /federate` mint route (JWKS keys come from the runtime in later wiring; this serves the EdDSA key from a Secret-loaded seed plus an RSA JWK cached in KV; the `/federate` route signs per-cloud RS256 tokens via the WebCrypto signer from Task 5):
 ```rust
-use worker::*;
-
 pub mod discovery;
 pub mod federation;
 pub mod internal_token;
@@ -1330,55 +1359,8 @@ pub mod util;
 #[cfg(target_arch = "wasm32")]
 pub mod webcrypto_rsa;
 
-const ISSUER: &str = "https://idp.lifecycle.example";
-
-#[event(start)]
-fn start() {
-    console_error_panic_hook::set_once();
-}
-
-#[event(fetch)]
-async fn fetch(req: Request, env: Env, _ctx: Context) -> Result<Response> {
-    let path = req.path();
-    match (req.method(), path.as_str()) {
-        (Method::Get, "/.well-known/openid-configuration") => {
-            let cfg = discovery::IssuerConfig { issuer: ISSUER.to_string() };
-            let mut resp = Response::from_json(&discovery::openid_configuration(&cfg))?;
-            resp.headers_mut()
-                .set("cache-control", "public, max-age=300")?;
-            Ok(resp)
-        }
-        (Method::Get, "/jwks") => {
-            let ed = load_internal_signer(&env)?.public_jwk();
-            // RSA JWK is attached at runtime (Task 11). For now publish the Ed key
-            // and any cached RSA JWK from KV.
-            let mut keys = vec![ed];
-            if let Ok(kv) = env.kv("JWKS_CACHE") {
-                if let Some(rsa) = kv.get("rsa_jwk").json::<serde_json::Value>().await? {
-                    keys.push(rsa);
-                }
-            }
-            let doc = jwks::assemble_jwks(&keys);
-            jwks::validate_jwks_invariants(&doc)
-                .map_err(|e| Error::RustError(format!("jwks invariant: {e}")))?;
-            let mut resp = Response::from_json(&doc)?;
-            resp.headers_mut()
-                .set("cache-control", "public, max-age=300")?;
-            Ok(resp)
-        }
-        _ => Response::error("not found", 404),
-    }
-}
-
-/// Load the EdDSA internal signer from a 32-byte hex Secret (`INTERNAL_ED25519_SEED`).
-fn load_internal_signer(env: &Env) -> Result<internal_token::InternalSigner> {
-    let hex = env.secret("INTERNAL_ED25519_SEED")?.to_string();
-    let bytes = decode_hex_32(&hex).map_err(|e| Error::RustError(e))?;
-    internal_token::from_signing_key_bytes("int-2026-06", &bytes)
-        .map_err(|e| Error::RustError(e))
-}
-
-fn decode_hex_32(s: &str) -> std::result::Result<[u8; 32], String> {
+/// Pure hex decode for the 32-byte Ed25519 seed Secret. Host-testable.
+pub fn decode_hex_32(s: &str) -> std::result::Result<[u8; 32], String> {
     let s = s.trim();
     if s.len() != 64 {
         return Err(format!("seed must be 64 hex chars, got {}", s.len()));
@@ -1389,6 +1371,83 @@ fn decode_hex_32(s: &str) -> std::result::Result<[u8; 32], String> {
             .map_err(|e| format!("hex: {e}"))?;
     }
     Ok(out)
+}
+
+#[cfg(target_arch = "wasm32")]
+mod worker_entry {
+    use super::*;
+    use worker::*;
+
+    const ISSUER: &str = "https://idp.lifecycle.example";
+
+    #[event(start)]
+    fn start() {
+        console_error_panic_hook::set_once();
+    }
+
+    #[event(fetch)]
+    async fn fetch(req: Request, env: Env, _ctx: Context) -> Result<Response> {
+        let path = req.path();
+        match (req.method(), path.as_str()) {
+            (Method::Get, "/.well-known/openid-configuration") => {
+                let cfg = discovery::IssuerConfig { issuer: ISSUER.to_string() };
+                let mut resp = Response::from_json(&discovery::openid_configuration(&cfg))?;
+                resp.headers_mut()
+                    .set("cache-control", "public, max-age=300")?;
+                Ok(resp)
+            }
+            (Method::Get, "/jwks") => {
+                let ed = load_internal_signer(&env)?.public_jwk();
+                // RSA JWK is attached at runtime via the WebCrypto RSA key (Task 5),
+                // cached in KV. For now publish the Ed
+                // key and any cached RSA JWK from KV.
+                let mut keys = vec![ed];
+                if let Ok(kv) = env.kv("JWKS_CACHE") {
+                    if let Some(rsa) = kv.get("rsa_jwk").json::<serde_json::Value>().await? {
+                        keys.push(rsa);
+                    }
+                }
+                let doc = jwks::assemble_jwks(&keys);
+                jwks::validate_jwks_invariants(&doc)
+                    .map_err(|e| Error::RustError(format!("jwks invariant: {e}")))?;
+                let mut resp = Response::from_json(&doc)?;
+                resp.headers_mut()
+                    .set("cache-control", "public, max-age=300")?;
+                Ok(resp)
+            }
+            (Method::Post, "/federate") => {
+                // Per-cloud RS256 federation token mint. Consumed by the Go control
+                // plane (Phase 5 Task 12) via `POST {edgeBase}/federate`. Body:
+                // {"cloud":"aws|azure|gcp","sub":"<=127 chars"}. Each cloud gets a
+                // DISTINCT aud (AWS sts.amazonaws.com; Azure api://AzureADTokenExchange;
+                // GCP provider resource URL) — never reuse one token across clouds.
+                #[derive(serde::Deserialize)]
+                struct FedReq { cloud: String, sub: String }
+                let body: FedReq = req.json().await?;
+                let cloud = federation::parse_cloud(&body.cloud)
+                    .ok_or_else(|| Error::RustError("unknown cloud".into()))?;
+                let auds = federation::CloudAudiences::production(); // canonical per-cloud aud
+                let now = (Date::now().as_millis() / 1000) as u64;
+                // build_federation_claims enforces sub<=127, distinct aud, no azp, RS256 lifetimes.
+                let claims = federation::build_federation_claims(&auds, cloud, ISSUER, &body.sub, now, 900)
+                    .map_err(Error::RustError)?;
+                // Sign with the RS256 cloud key via WebCrypto SubtleCrypto (Task 5).
+                let token = webcrypto_rsa::sign_rs256(&env, &claims)
+                    .await
+                    .map_err(Error::RustError)?;
+                Response::from_json(&serde_json::json!({ "token": token }))
+            }
+            _ => Response::error("not found", 404),
+        }
+    }
+
+    /// Load the EdDSA internal signer from a 32-byte hex Secret (`INTERNAL_ED25519_SEED`).
+    fn load_internal_signer(env: &Env) -> Result<internal_token::InternalSigner> {
+        let hex = env.secret("INTERNAL_ED25519_SEED")?.to_string();
+        let bytes = decode_hex_32(&hex).map_err(Error::RustError)?;
+        internal_token::from_signing_key_bytes("int-2026-06", &bytes)
+            .map_err(Error::RustError)
+    }
 }
 ```
 
@@ -1404,8 +1463,8 @@ Expected: compiles.
 - [ ] **Step 7: Commit**
 
 ```bash
-git add edge/src/discovery.rs edge/src/lib.rs
-git commit -m "feat(edge): OIDC discovery + JWKS routes (issuer byte-identical, S256-only)"
+git add edge/src/discovery.rs edge/src/lib.rs edge/src/federation.rs
+git commit -m "feat(edge): OIDC discovery + JWKS + /federate per-cloud RS256 mint routes"
 ```
 
 ---
@@ -1786,37 +1845,40 @@ struct SubBody {
     sub: String,
 }
 
-#[durable_object]
+// NOTE: in workers-rs 0.8 the `#[durable_object]` attribute is applied to the
+// STRUCT ONLY (above). The trait impl carries NO attribute macro, `new` is
+// synchronous, and `fetch` takes `&self` (not `&mut self`).
 impl DurableObject for SessionStore {
     fn new(state: State, _env: Env) -> Self {
         Self { state }
     }
 
-    async fn fetch(&mut self, mut req: Request) -> Result<Response> {
+    async fn fetch(&self, mut req: Request) -> Result<Response> {
         let storage = self.state.storage();
         match (req.method(), req.path().as_str()) {
             (Method::Post, "/create") => {
                 let b: CreateBody = req.json().await?;
                 let rec = SessionRecord {
-                    sub: b.sub,
+                    sub: b.sub.clone(),
                     created: b.created,
                     expires: b.expires,
                     revoked: false,
                 };
-                self.state
-                    .storage()
-                    .put(&format!("s:{}", b.token), &rec)
-                    .await?;
+                storage.put(&format!("s:{}", b.token), &rec).await?;
                 // Secondary index for revoke-all by subject.
-                let key = format!("u:{}:{}", rec.sub, b.token);
-                self.state.storage().put(&key, &b.token).await?;
+                let key = format!("u:{}:{}", b.sub, b.token);
+                storage.put(&key, &b.token).await?;
                 Response::ok("created")
             }
             (Method::Post, "/resolve") => {
                 let b: TokenBody = req.json().await?;
                 let now = (Date::now().as_millis() / 1000) as u64;
-                let rec: Option<SessionRecord> =
-                    storage.get(&format!("s:{}", b.token)).await.ok();
+                // `Storage::get` returns `Result<Option<T>>`; a missing key is
+                // `Ok(None)`. Treat any storage error as a missing record too.
+                let rec: Option<SessionRecord> = storage
+                    .get(&format!("s:{}", b.token))
+                    .await
+                    .unwrap_or(None);
                 let status = evaluate(rec.as_ref(), now);
                 let body = serde_json::json!({
                     "status": match status {
@@ -1825,16 +1887,20 @@ impl DurableObject for SessionStore {
                         SessionStatus::Revoked => "revoked",
                         SessionStatus::Unknown => "unknown",
                     },
-                    "sub": rec.as_ref().map(|r| r.sub.clone()),
+                    // Only reveal `sub` for an active session.
+                    "sub": match status {
+                        SessionStatus::Active => rec.as_ref().map(|r| r.sub.clone()),
+                        _ => None,
+                    },
                 });
                 Response::from_json(&body)
             }
             (Method::Post, "/revoke") => {
                 let b: TokenBody = req.json().await?;
                 let key = format!("s:{}", b.token);
-                if let Ok(mut rec) = storage.get::<SessionRecord>(&key).await {
+                if let Some(mut rec) = storage.get::<SessionRecord>(&key).await? {
                     rec.revoked = true;
-                    self.state.storage().put(&key, &rec).await?;
+                    storage.put(&key, &rec).await?;
                 }
                 Response::ok("revoked")
             }
@@ -1842,15 +1908,20 @@ impl DurableObject for SessionStore {
                 let b: SubBody = req.json().await?;
                 let prefix = format!("u:{}:", b.sub);
                 let opts = ListOptions::new().prefix(&prefix);
+                // `list_with_options` returns a JS `Map`; `keys()` yields a
+                // `js_sys::Iterator` of `Result<JsValue, JsValue>`.
                 let listed = storage.list_with_options(opts).await?;
                 let mut count = 0u32;
                 for key in listed.keys() {
-                    let key = key?.as_string().unwrap_or_default();
+                    let key = key
+                        .map_err(|e| Error::RustError(format!("list key: {e:?}")))?
+                        .as_string()
+                        .unwrap_or_default();
                     if let Some(token) = key.rsplit(':').next() {
                         let skey = format!("s:{token}");
-                        if let Ok(mut rec) = storage.get::<SessionRecord>(&skey).await {
+                        if let Some(mut rec) = storage.get::<SessionRecord>(&skey).await? {
                             rec.revoked = true;
-                            self.state.storage().put(&skey, &rec).await?;
+                            storage.put(&skey, &rec).await?;
                             count += 1;
                         }
                     }
@@ -1862,7 +1933,7 @@ impl DurableObject for SessionStore {
     }
 }
 ```
-> Note: `Date::now()` provides the DO's wall clock; `evaluate` (pure, Task 8) makes the actual decision so it stays unit-tested. The exact `storage.get`/`list` binding shape follows `worker` 0.8; confirm at the `wrangler dev` step (Task 11).
+> Note: `Date::now()` provides the DO's wall clock; `evaluate` (pure, Task 8) makes the actual decision so it stays unit-tested. `Storage::get` returns `Result<Option<T>>` (missing key ⇒ `Ok(None)`); `list_with_options` returns a JS `Map` whose `keys()` is a `js_sys::Iterator` yielding `Result<JsValue, JsValue>`. Confirm the exact iterator-to-key conversion at the `wrangler dev` integration check and adjust the `for` loop if the binding wraps it differently.
 
 - [ ] **Step 6: Verify the WASM build compiles**
 
@@ -2614,7 +2685,7 @@ mod tests {
     fn ev() -> DecisionEvent {
         DecisionEvent {
             decision_id: "d-123".into(),
-            path: "lifecycle/authz/allow".into(),
+            path: "data.authz.allow".into(),
             input: json!({ "subject":"u-1","action":"read","resource":"users/9","access_token":"SECRET","authorization":"Bearer SECRET" }),
             result: true,
             timestamp: 1_750_000_000,
@@ -2625,7 +2696,7 @@ mod tests {
     fn renders_the_opa_decision_log_shape() {
         let out = render_opa_event(&ev());
         assert_eq!(out["decision_id"], "d-123");
-        assert_eq!(out["path"], "lifecycle/authz/allow");
+        assert_eq!(out["path"], "data.authz.allow");
         assert_eq!(out["result"], true);
         assert_eq!(out["timestamp"], 1_750_000_000u64);
         assert!(out.get("input").is_some());
@@ -2850,11 +2921,19 @@ git commit -m "docs(edge): SAML brokered-to-OIDC boundary note"
 | Typed Regorus authz seam deferred to Phase 4 (fail-closed `DenyAllEngine`) | Task 12 ✓ (seam only) |
 | SAML brokered to OIDC, never hand-rolled in WASM | Task 13 ✓ (note) |
 | Local JWT validation never per-request fetch | Task 2 (verify is in-process) + Task 11 (fetch only the anchored JWKS) ✓ |
-| `--panic-unwind` + `console_error_panic_hook`; no ring/aws-lc-rs/openssl; `rust_crypto` backend; rsa verify-only | Global Constraints + Task 1 manifest ✓ |
+| `--panic-unwind` + `console_error_panic_hook`; no ring/aws-lc-rs/openssl; `rust_crypto` backend | Global Constraints + Task 1 manifest ✓ |
+
+**API-correctness pass (verified against current stable docs, June 2026):**
+- workers-rs 0.8.3 Durable Object: `#[durable_object]` on the **struct only** (never the impl); `fn new(state, env)` is **synchronous**; `async fn fetch(&self, …)` takes **`&self`**. `Storage::get` returns **`Result<Option<T>>`** (missing ⇒ `Ok(None)`); `list_with_options` returns a JS `Map` whose `keys()` yields `Result<JsValue, JsValue>`. (Task 8 corrected.)
+- `jsonwebtoken` 10.x: forged `alg:"none"` is **not** an `Algorithm` variant, so the header gate parses the **raw** JOSE header itself (controlled rejection) rather than `decode_header`; `Validation.{algorithms,leeway,validate_exp,validate_nbf}` are public fields and `set_issuer/set_audience/set_required_spec_claims` are methods; built-in exp/nbf time checks are disabled and re-enforced against the injected `now` (no system clock on WASM). (Task 2 corrected.)
+- `ed25519-dalek` v2: `to_pkcs8_pem`/`to_public_key_pem` require the **`pem`** feature (the `pkcs8` feature alone is DER-only) — added to the manifest. `verify_strict` used for DPoP (Task 10).
+- `web-sys` `SubtleCrypto`: `import_key_with_object(key_data: &Object, …)`, `sign_with_object_and_u8_array(data: &[u8])` (not `&mut`), `export_key`; `Crypto::subtle()` is infallible, `WorkerGlobalScope::crypto()` is `Result`. (Task 5 corrected.)
+- The Worker entrypoint (`#[event]` handlers, `worker::*`, DO) is gated to `#[cfg(target_arch = "wasm32")]` so the pure modules compile and `cargo test` runs on the **host** target as the architecture claims (Tasks 1 & 6).
+- The standalone `rsa` crate was removed from Phase 2 deps (unused; RS256 verify is covered by jsonwebtoken's `rust_crypto`, RS256 sign by WebCrypto) — avoids a `default-features=false` (no-alloc) build break.
 
 Correctly **out of scope** (deferred, per spec build order): SCIM 2.0 service provider → Phase 3; Regorus policy authoring/eval → Phase 4 (only the typed seam here); native-Go control plane / offboarding saga / federation orchestration → Phase 5; Terraform/CDK trust provisioning → Phase 6; live SSE telemetry of token flow → Phase 7; PASETO v4.local stateless cross-Worker token (listed optional in spec) → left as the `pasetors` dependency, not wired; CI SHA-pinning/SLSA/SBOM → Phase 9.
 
-**Placeholder scan:** No "TODO/TBD/implement error handling/similar to Task N". Every code step contains complete Rust. The only labeled deferrals are: the KV namespace `id` in `wrangler.jsonc` (`PLACEHOLDER_REPLACE_BEFORE_DEPLOY`, explicitly flagged), the WebCrypto/DO binding-name confirmations (gated behind the `wrangler dev` check in Task 11, with `cargo doc` fallback), and the fail-closed `DenyAllEngine` (intentional Phase-4 seam). The RFC 7638 test vector in Task 10 has a recompute note so the *canonicalization* (the contract) is what is asserted.
+**Placeholder scan:** No "TODO/TBD/implement error handling/similar to Task N". Every code step contains complete Rust. The only labeled deferrals are: the KV namespace `id` in `wrangler.jsonc` (`PLACEHOLDER_REPLACE_BEFORE_DEPLOY`, explicitly flagged), the JS `Map::keys()` iterator-to-key conversion in the DO `/revoke-all` loop (a thin binding detail to confirm at the `wrangler dev` integration check), and the fail-closed `DenyAllEngine` (intentional Phase-4 seam). The crate-API shapes (DO trait, `Storage::get` Option, SubtleCrypto signatures, dalek `pem`) are now verified against current docs (see the API-correctness pass above). The RFC 7638 test vector in Task 10 has a recompute note so the *canonicalization* (the contract) is what is asserted.
 
 **Type consistency across tasks:**
 - `util::{b64url_encode, b64url_decode}` (Task 1) consumed unchanged by Tasks 3, 5, 7, 8, 10.

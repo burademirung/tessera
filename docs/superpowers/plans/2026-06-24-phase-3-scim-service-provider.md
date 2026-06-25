@@ -607,7 +607,7 @@ The engine works on a generic `serde_json::Value` canonical tree (the stored res
 1. `replace`/`add` **without path** + object value → merge each top-level key; if a key is dot-notated (`name.givenName`) split into nested set; `active` coerced via `coerce_active`.
 2. `replace`/`add` **with path** (`active`, `displayName`, `name.givenName`) → set that path.
 3. `add` with path `members` + array value → append members.
-4. `remove` with path `members` + array value (value-array form) → remove listed members.
+4. `remove` with path `members` + array value (value-array form) → remove ONLY the listed members; `remove` path `members` with no value → clear the whole set.
 5. `remove` with path `members[value eq "X"]` (value-path form) → remove the matching member.
 
 - [ ] **Step 1: Write the failing test**
@@ -633,7 +633,7 @@ pub fn apply_patch(resource: &Value, ops: &[NormalizedOp]) -> Result<Value, Scim
 
 fn apply_one(root: &mut Value, op: &NormalizedOp) -> Result<(), ScimError> {
     match (&op.kind, &op.path) {
-        (PatchOpKind::Remove, Some(path)) => remove_path(root, path),
+        (PatchOpKind::Remove, Some(path)) => remove_path(root, path, op.value.as_ref()),
         (PatchOpKind::Remove, None) => Err(ScimError::bad_request(
             ScimErrorType::NoTarget,
             "remove requires a path",
@@ -681,23 +681,41 @@ fn coerce_attr(key: &str, v: &Value) -> Value {
     v.clone()
 }
 
+/// Prefix shared by all SCIM schema-extension namespace URNs. Such a key carries
+/// its own dots (e.g. the `2.0` in `...:enterprise:2.0:User`) and MUST NOT be
+/// dot-split — the version would shatter into `2`/`0`.
+const EXTENSION_URN_PREFIX: &str = "urn:ietf:params:scim:schemas:extension:";
+
+/// Split a dot-notation path into segments WITHOUT shattering an extension URN.
+/// `name.givenName` → ["name","givenName"]. A key that begins with an extension
+/// URN is kept ATOMIC (no dot-splitting at all): Entra emits the enterprise URN
+/// as a single top-level key whose value is the full extension object, never a
+/// `<URN>.<subattr>` dotted chain — so the URN (dots and all) is one segment.
+fn split_path(path: &str) -> Vec<String> {
+    if path.starts_with(EXTENSION_URN_PREFIX) {
+        vec![path.to_string()]
+    } else {
+        path.split('.').map(str::to_string).collect()
+    }
+}
+
 /// Set a dot-notation path (e.g. "name.givenName") to a value, creating objects.
 fn set_path(root: &mut Value, path: &str, value: Value) -> Result<(), ScimError> {
     if !root.is_object() {
         *root = Value::Object(Map::new());
     }
-    let parts: Vec<&str> = path.split('.').collect();
+    let parts: Vec<String> = split_path(path);
     let mut cur = root;
     for (i, part) in parts.iter().enumerate() {
         let obj = cur.as_object_mut().ok_or_else(|| {
             ScimError::bad_request(ScimErrorType::InvalidPath, "path crosses a non-object")
         })?;
         if i == parts.len() - 1 {
-            obj.insert((*part).to_string(), value);
+            obj.insert(part.clone(), value);
             return Ok(());
         }
         cur = obj
-            .entry((*part).to_string())
+            .entry(part.clone())
             .or_insert_with(|| Value::Object(Map::new()));
     }
     Ok(())
@@ -720,19 +738,39 @@ fn add_members(root: &mut Value, value: &Value) -> Result<(), ScimError> {
     Ok(())
 }
 
-/// Handle both `remove members` (value-array) and `members[value eq "X"]`.
-fn remove_path(root: &mut Value, path: &str) -> Result<(), ScimError> {
+/// Handle both group-member-remove shapes plus plain attribute removal:
+///   1. `members[value eq "X"]`            → remove the one matching member.
+///   2. `members` + value-array of members → remove ONLY the listed members
+///      (the value-array form Okta/Entra send: `{value:[{value:"X"},...]}`).
+///   3. `members` with NO value            → clear the whole membership set.
+///   4. any other dot-notation path        → delete that attribute.
+fn remove_path(root: &mut Value, path: &str, value: Option<&Value>) -> Result<(), ScimError> {
     if let Some(target) = parse_member_value_path(path) {
         return remove_member_by_value(root, &target);
     }
     if path == "members" {
-        if let Some(obj) = root.as_object_mut() {
-            obj.insert("members".to_string(), json!([]));
+        match value.and_then(Value::as_array) {
+            // Value-array form: remove each listed member by its `value`.
+            Some(to_remove) => {
+                let targets: Vec<String> = to_remove
+                    .iter()
+                    .filter_map(|m| m.get("value").and_then(Value::as_str).map(str::to_string))
+                    .collect();
+                for t in targets {
+                    remove_member_by_value(root, &t)?;
+                }
+            }
+            // No value (and not a non-array value) → clear the whole set.
+            None => {
+                if let Some(obj) = root.as_object_mut() {
+                    obj.insert("members".to_string(), json!([]));
+                }
+            }
         }
         return Ok(());
     }
-    // simple attribute removal (dot-notation)
-    let parts: Vec<&str> = path.split('.').collect();
+    // simple attribute removal (dot-notation, URN-aware)
+    let parts: Vec<String> = split_path(path);
     let mut cur = root;
     for (i, part) in parts.iter().enumerate() {
         let obj = match cur.as_object_mut() {
@@ -740,10 +778,10 @@ fn remove_path(root: &mut Value, path: &str) -> Result<(), ScimError> {
             None => return Ok(()),
         };
         if i == parts.len() - 1 {
-            obj.remove(*part);
+            obj.remove(part);
             return Ok(());
         }
-        match obj.get_mut(*part) {
+        match obj.get_mut(part) {
             Some(next) => cur = next,
             None => return Ok(()),
         }
@@ -812,6 +850,24 @@ mod tests {
     }
 
     #[test]
+    fn no_path_replace_does_not_shatter_enterprise_urn_key() {
+        // Entra-with-flag may carry the enterprise URN as a top-level key in a
+        // no-path replace. The URN contains dots ("2.0") that must NOT be split.
+        let user = json!({ "userName": "a" });
+        let urn = "urn:ietf:params:scim:schemas:extension:enterprise:2.0:User";
+        let patched = apply_patch(
+            &user,
+            &ops(json!({ "Operations": [
+                { "op": "replace", "value": { urn: { "department": "Tech" } } }
+            ]})),
+        )
+        .unwrap();
+        // The full URN survives as a single key; "2.0" was not split into "2"/"0".
+        assert_eq!(patched[urn]["department"], "Tech");
+        assert!(patched.get("2").is_none());
+    }
+
+    #[test]
     fn path_replace_sets_nested() {
         let user = json!({ "userName": "a" });
         let patched = apply_patch(
@@ -859,8 +915,26 @@ mod tests {
 
     #[test]
     fn group_member_remove_value_array_form() {
-        // Alternate form: remove path "members" wipes the set (value-array semantics
-        // are exercised via add-after; here remove-all is the documented behavior).
+        // Value-array form: remove ONLY the listed members, leaving the rest intact.
+        let group = json!({ "displayName": "g",
+            "members": [{ "value": "u1" }, { "value": "u2" }, { "value": "u3" }] });
+        let patched = apply_patch(
+            &group,
+            &ops(json!({ "Operations": [
+                { "op": "remove", "path": "members",
+                  "value": [{ "value": "u1" }, { "value": "u3" }] }
+            ]})),
+        )
+        .unwrap();
+        let vals: Vec<&str> = patched["members"]
+            .as_array().unwrap().iter()
+            .filter_map(|m| m["value"].as_str()).collect();
+        assert_eq!(vals, vec!["u2"]); // only u1, u3 removed
+    }
+
+    #[test]
+    fn group_member_remove_no_value_clears_set() {
+        // No value → clear the whole membership set.
         let group = json!({ "displayName": "g", "members": [{ "value": "u1" }] });
         let patched = apply_patch(
             &group,
@@ -898,7 +972,7 @@ Expected: FAIL (module not yet wired).
 - [ ] **Step 3: Confirm it passes**
 
 Run: `cargo test --manifest-path edge/Cargo.toml scim::patch`
-Expected: PASS (7 tests).
+Expected: PASS (9 tests).
 
 - [ ] **Step 4: Commit**
 
@@ -958,7 +1032,15 @@ enum Tok {
     RParen,
 }
 
+/// Hard caps so a hostile filter cannot exhaust memory or blow the parser stack
+/// (brief 10 §3: SCIM filter injection + pagination/DoS). Real IdP filters are tiny.
+const MAX_FILTER_LEN: usize = 2048;
+const MAX_FILTER_DEPTH: usize = 16;
+
 fn lex(input: &str) -> Result<Vec<Tok>, ScimError> {
+    if input.len() > MAX_FILTER_LEN {
+        return Err(invalid("filter too long"));
+    }
     let mut toks = Vec::new();
     let chars: Vec<char> = input.chars().collect();
     let mut i = 0;
@@ -1025,6 +1107,7 @@ fn invalid(detail: impl Into<String>) -> ScimError {
 struct Parser {
     toks: Vec<Tok>,
     pos: usize,
+    depth: usize,
 }
 
 impl Parser {
@@ -1038,12 +1121,19 @@ impl Parser {
     }
     // expr := term ( "and" term )*
     fn parse_expr(&mut self) -> Result<FilterExpr, ScimError> {
+        // Depth guard: bound recursion so a hostile nested filter can't blow the
+        // stack (DoS). Decremented on the way out.
+        self.depth += 1;
+        if self.depth > MAX_FILTER_DEPTH {
+            return Err(invalid("filter nesting too deep"));
+        }
         let mut left = self.parse_term()?;
         while matches!(self.peek(), Some(Tok::And)) {
             self.next();
             let right = self.parse_term()?;
             left = FilterExpr::And(Box::new(left), Box::new(right));
         }
+        self.depth -= 1;
         Ok(left)
     }
     // term := "(" expr ")" | comparison
@@ -1081,7 +1171,7 @@ pub fn parse_filter(input: &str) -> Result<FilterExpr, ScimError> {
     if toks.is_empty() {
         return Err(invalid("empty filter"));
     }
-    let mut p = Parser { toks, pos: 0 };
+    let mut p = Parser { toks, pos: 0, depth: 0 };
     let expr = p.parse_expr()?;
     if p.pos != p.toks.len() {
         return Err(invalid("trailing tokens in filter"));
@@ -1202,6 +1292,21 @@ mod tests {
         assert!(parse_filter("userName eq \"x\\y\"").is_err());
         assert!(parse_filter("userName eq \"x").is_err());
     }
+
+    #[test]
+    fn rejects_overlong_and_overdeep_filters() {
+        // Length guard.
+        let long = format!("userName eq \"{}\"", "a".repeat(MAX_FILTER_LEN));
+        assert!(parse_filter(&long).is_err());
+        // Depth guard: deeply nested parentheses.
+        let deep = format!(
+            "{}userName eq \"x\"{}",
+            "(".repeat(MAX_FILTER_DEPTH + 2),
+            ")".repeat(MAX_FILTER_DEPTH + 2)
+        );
+        let err = parse_filter(&deep).unwrap_err();
+        assert_eq!(err.scim_type, Some(ScimErrorType::InvalidFilter));
+    }
 }
 ```
 
@@ -1215,7 +1320,7 @@ Expected: FAIL (module not yet wired).
 - [ ] **Step 3: Confirm it passes**
 
 Run: `cargo test --manifest-path edge/Cargo.toml scim::filter`
-Expected: PASS (8 tests).
+Expected: PASS (9 tests).
 
 - [ ] **Step 4: Commit**
 
@@ -1916,17 +2021,34 @@ pub type Outcome = (u16, Value, Option<String>);
 impl<'a, S: UserStore> UserService<'a, S> {
     fn finalize(&self, mut su: StoredUser) -> Outcome {
         let id = su.body["id"].as_str().unwrap_or_default().to_string();
+        // ETag MUST be reproducible across reads: hash the STABLE resource content
+        // (the stored body with volatile meta removed) keyed by the monotonic
+        // version. `last_modified`/`location` are added to the response AFTER
+        // hashing, so a fresh GET reproduces the exact same ETag (otherwise every
+        // If-Match would 412 once `now()` is the real clock, not a test constant).
+        let mut stable = su.body.clone();
+        if let Some(obj) = stable.as_object_mut() {
+            obj.remove("meta");
+        }
+        let tag = etag(su.version, &stable);
         let meta = Meta {
             resource_type: Some("User".into()),
             created: su.body["meta"]["created"].as_str().map(str::to_string),
             last_modified: Some((self.now)()),
             location: Some(format!("/scim/v2/Users/{id}")),
-            version: None,
+            version: Some(tag.clone()),
         };
         su.body["meta"] = serde_json::to_value(meta).unwrap();
-        let tag = etag(su.version, &su.body);
-        su.body["meta"]["version"] = json!(tag);
         (200, su.body, Some(tag))
+    }
+
+    /// The reproducible ETag for a stored resource (same input `finalize` hashes).
+    fn etag_of(&self, su: &StoredUser) -> String {
+        let mut stable = su.body.clone();
+        if let Some(obj) = stable.as_object_mut() {
+            obj.remove("meta");
+        }
+        etag(su.version, &stable)
     }
 
     pub fn create(&mut self, ctx: &TenantCtx, incoming: Value) -> Result<Outcome, ScimError> {
@@ -1983,7 +2105,7 @@ impl<'a, S: UserStore> UserService<'a, S> {
             .store
             .get(&ctx.tenant_id, id)
             .ok_or_else(|| ScimError::not_found("user not found"))?;
-        check_if_match(if_match, &etag(existing.version, &existing.body))?;
+        check_if_match(if_match, &self.etag_of(&existing))?;
         let mut clean = apply_writable_allow_list(&incoming, USER_WRITABLE);
         clean["id"] = json!(id);
         clean["meta"] = json!({ "created": existing.body["meta"]["created"].clone() });
@@ -2005,7 +2127,7 @@ impl<'a, S: UserStore> UserService<'a, S> {
             .store
             .get(&ctx.tenant_id, id)
             .ok_or_else(|| ScimError::not_found("user not found"))?;
-        check_if_match(if_match, &etag(existing.version, &existing.body))?;
+        check_if_match(if_match, &self.etag_of(&existing))?;
         let ops = normalize_patch(&body)?;
         let patched = apply_patch(&existing.body, &ops)?; // atomic
         // Re-apply allow-list: PATCH must not let a client set server-owned fields.
@@ -2201,13 +2323,13 @@ git commit -m "feat(scim): store-agnostic CRUD service (dialect+allow-list+soft-
 **Files:**
 - Create: `edge/src/scim/d1_store.rs`, `edge/src/scim/router.rs`, `edge/src/scim/handlers.rs`
 - Create: `edge/migrations/0002_scim.sql`
-- Edit: `edge/src/scim/mod.rs`, `edge/src/lib.rs` (mount the SCIM router on the Phase-2 router), `edge/wrangler.toml` (D1 binding + DO binding + migration)
+- Modify: `edge/src/scim/mod.rs`, `edge/src/lib.rs` (mount the SCIM router on the Phase-2 router), `edge/wrangler.jsonc` (the existing Phase-2 config — add D1 binding + SCIM version DO binding + extend migration; do NOT overwrite the Phase-2 `SESSIONS`/`SessionStore` binding/migration)
 - Test: inline `#[cfg(test)]` in `edge/src/scim/handlers.rs` (request-shape unit tests; full IO covered by Task 12 conformance + manual validator gate)
 
 **Interfaces:**
 - Consumes: **the Phase-2 router/state seam.** This task assumes Phase-2 exposes (a) a way to register sub-routes (e.g. a `worker::Router` or an app router enum) and (b) a `State` carrying `Env` (D1 + DO bindings) and the token verifier. The SCIM router mounts under `/scim/v2`.
 - Produces:
-  - `pub struct D1UserStore<'a> { db: &'a worker::d1::D1Database, version_do: ... }` implementing `service::UserStore`, using **parameterized** queries (binds from `filter::SqlFilter` + `page::to_sql`). The monotonic `version` per resource comes from the per-tenant Durable Object so ETags are correct under concurrency.
+  - `pub struct D1UserStore<'a> { db: &'a worker::d1::D1Database, version_store: &'a worker::durable::ObjectNamespace /* the `SCIM_VERSIONS` binding → `ScimVersionStore` DO */ }` implementing `service::UserStore`, using **parameterized** queries (binds from `filter::SqlFilter` + `page::to_sql`). The monotonic `version` per resource comes from the per-tenant `ScimVersionStore` Durable Object (bound as `SCIM_VERSIONS`) so ETags are correct under concurrency.
   - `pub async fn handle(req, ctx) -> worker::Result<worker::Response>` — the dispatcher: verify-first auth → method/path match → call `UserService`/discovery → serialize with `Content-Type: application/scim+json` and ETag header.
 
 - [ ] **Step 1: Write the D1 migration**
@@ -2438,16 +2560,45 @@ mod tests {
 
 > The `handle` async dispatcher in `handlers.rs` performs: (1) `auth::resolve_tenant` using the Phase-2 verifier from `ctx`; (2) `route(method, path)`; (3) for filtered GETs, `filter::parse_filter` → `filter::compile(.., USER_FILTER_ALLOW)` → bind via `select_by_filter_sql`; (4) load a `Snapshot` from D1 (parameterized), construct `UserService`, call the matching method; (5) persist writes back to D1 (parameterized `INSERT/UPDATE/DELETE`, bumping `version`); (6) serialize with `Content-Type: application/scim+json`, set `ETag` from the outcome. Add the full async body using `worker` 0.8 D1 APIs; the pure builders + route + error helpers above are the tested core.
 
-- [ ] **Step 3: Add bindings to wrangler**
+- [ ] **Step 3: Add bindings to the existing Phase-2 wrangler config**
 
-Edit `edge/wrangler.toml` to ensure:
-```toml
-[[d1_databases]]
-binding = "DB"
-database_name = "lifecycle"
-database_id = "REPLACE_WITH_D1_ID"   # set after `wrangler d1 create lifecycle`
-migrations_dir = "migrations"
+Edit the existing `edge/wrangler.jsonc` (created in Phase 2). **ADD** the SCIM D1 binding and the SCIM version Durable Object **alongside** the Phase-2 `SESSIONS`/`SessionStore` binding and migration — do not remove or overwrite them. The merged config makes both phases' bindings coexist:
+
+```jsonc
+{
+  // ...existing Phase-2 fields (name, main, compatibility_date, etc.)...
+
+  // Phase-3: D1 relational store for SCIM Users/Groups.
+  "d1_databases": [
+    {
+      "binding": "DB",
+      "database_name": "lifecycle",
+      "database_id": "PLACEHOLDER_REPLACE_BEFORE_DEPLOY", // set after `wrangler d1 create lifecycle`
+      "migrations_dir": "migrations"
+    }
+  ],
+
+  "durable_objects": {
+    "bindings": [
+      // Phase-2 (existing) — DO NOT remove.
+      { "name": "SESSIONS", "class_name": "SessionStore" },
+      // Phase-3 (added) — per-tenant SCIM version/ETag counter.
+      { "name": "SCIM_VERSIONS", "class_name": "ScimVersionStore" }
+    ]
+  },
+
+  "migrations": [
+    {
+      "tag": "v1",
+      // Phase-2 created SessionStore; Phase-3 adds ScimVersionStore to the
+      // SQLite-backed DO class list. Keep BOTH classes here.
+      "new_sqlite_classes": ["SessionStore", "ScimVersionStore"]
+    }
+  ]
+}
 ```
+
+> If Phase-2 already shipped a migration tag (e.g. `v1` with only `["SessionStore"]`), do **not** edit that frozen tag — append a NEW migration tag (e.g. `v2`) whose `new_sqlite_classes` is `["ScimVersionStore"]`, leaving the Phase-2 tag untouched. The snippet above shows the single-tag greenfield form; the live `ScimVersionStore` DO class lands with the Phase-2 DO seam, bound here as `SCIM_VERSIONS`.
 
 - [ ] **Step 4: Run the route/handler unit tests (fail first)**
 
@@ -2482,7 +2633,7 @@ Expected: migration applies; WASM builds.
 - [ ] **Step 8: Commit**
 
 ```bash
-git add edge/src/scim/handlers.rs edge/src/scim/router.rs edge/src/scim/d1_store.rs edge/src/scim/mod.rs edge/src/lib.rs edge/migrations/0002_scim.sql edge/wrangler.toml
+git add edge/src/scim/handlers.rs edge/src/scim/router.rs edge/src/scim/d1_store.rs edge/src/scim/mod.rs edge/src/lib.rs edge/migrations/0002_scim.sql edge/wrangler.jsonc
 git commit -m "feat(scim): D1/DO store, /scim/v2 router mount, route dispatch, migration"
 ```
 
@@ -2576,9 +2727,16 @@ Create `edge/tests/conformance.rs`:
 ```rust
 //! Replays VERBATIM Okta + BOTH Entra dialect payloads against the same pure logic
 //! the Worker runs, asserting the exact SCIM status-code matrix:
-//!   create 201 · duplicate 409 · found 200 · query-empty 200 (never 404) ·
-//!   PATCH user 200 · PUT 200 · soft-delete keeps GET 200 · hard DELETE 204 ·
+//!   create 201 · duplicate 409 (scimType uniqueness) · found 200 ·
+//!   query-empty 200 (never 404) · PATCH user 200 · PUT 200 ·
+//!   soft-delete keeps GET 200 · hard DELETE user 204 ·
 //!   If-Match mismatch 412 · bad filter 400 invalidFilter.
+//!
+//! Group status codes (brief 06): Entra expects **PATCH group 204** and
+//! **DELETE group 204** (no body). The group-member PATCH ENGINE (add + both
+//! remove forms) is asserted here against the canonical tree; the dispatcher maps
+//! a successful group PATCH/DELETE to 204 (asserted at the handler layer in Task 11
+//! once the Group async D1 body lands — called out in Task 11 / Self-Review).
 
 use serde_json::{json, Value};
 use std::fs;
@@ -2845,17 +3003,17 @@ git commit -m "test(scim): CI conformance — verbatim Okta + both Entra dialect
 - PUT and PATCH on `/Users/{id}` → Task 10 `replace` + `patch`, Task 11 routing, Task 12. ✓
 - Core User/Group models + extension-URN map + EnterpriseUser → Task 2. ✓
 - Discovery endpoints static-compiled → Task 8. ✓
-- Generic PATCH engine over path-addressable canonical tree; case-insensitive op (`to_lowercase`); `active` bool AND string; replace with/without path + dot-notation split; group remove both shapes; atomic → Tasks 3 + 4, asserted Task 4 + Task 12. ✓
-- Filter parser (eq + and + pr + value-path subset); strict grammar; parameterized D1 queries; injection-safe → Task 5 + Task 11 query builders, asserted Task 5 (injection payload stays a bind) + Task 11. ✓
+- Generic PATCH engine over path-addressable canonical tree; case-insensitive op (`to_lowercase`); `active` bool AND string; replace with/without path + URN-safe dot-notation split (the enterprise URN key — which itself contains `2.0` — is treated atomically and never shattered); group remove BOTH shapes — value-array form removes ONLY the listed members, `members[value eq "…"]` removes the one match, and no-value `remove members` clears the set; atomic → Tasks 3 + 4, asserted Task 4 + Task 12. ✓
+- Filter parser (eq + and + pr + value-path subset); strict grammar; length + nesting-depth caps (DoS guard, brief 10 §3); parameterized D1 queries; injection-safe → Task 5 + Task 11 query builders, asserted Task 5 (injection payload stays a bind; overlong/overdeep rejected) + Task 11. ✓
 - Pagination (1-based startIndex, integer counts, stable ordering) → Task 6, Task 11 `ORDER BY id`. ✓
-- CRUD mapped to D1/DO with ETag/If-Match (412) + externalId↔id correlation → Tasks 7, 10, 11; asserted Task 10/12 (412). ✓
+- CRUD mapped to D1/DO with ETag/If-Match (412) + externalId↔id correlation → Tasks 7, 10, 11; asserted Task 10/12 (412). The ETag is computed over the STABLE resource content (volatile `meta.lastModified`/`location` excluded) keyed by the monotonic version, so a fresh GET reproduces the exact ETag and If-Match stays correct under the real wall clock (not just the test's constant `now()`). ✓
 - Error responses: status as STRING; scimType uniqueness 409 etc. → Task 1, asserted Task 1 + Task 12. ✓
 - Object-level authz + tenant isolation (BOLA) → Task 9 `ensure_owns` (cross-tenant 404), Task 10 tenant-scoped store calls. ✓
 - Writable-attribute allow-list (mass-assignment) → Task 7 `apply_writable_allow_list`, enforced on create/replace/patch in Task 10, asserted Task 7 + Task 12 (`patch_cannot_set_server_owned_id`). ✓
 - Bearer/OAuth auth verify-first → Task 9 `resolve_tenant` (verify before body/store), Task 11 dispatcher order. ✓
 - CI conformance replay of verbatim Okta + both Entra dialects asserting status matrix → Task 12. ✓
 - Pure logic gets real `#[cfg(test)]` unit tests with concrete assertions on verbatim payloads → Tasks 1-10 inline tests + Task 12 fixtures. ✓
-- **Deferred (correctly out of scope here):** Group CRUD handlers' full async D1 IO body is sketched (Task 11) and unit-tested at the route/builder level; the per-tenant Durable Object version counter is named and its role specified, with the in-memory `Snapshot` proving the version/ETag semantics — the live DO RPC binding lands when Phase-2's DO seam is finalized. Decision-log emission (Rust host code) and the leaver saga (revoke grants/terminate sessions) belong to Phase 5 (control plane), per spec §4 Layer 3. The hosted Microsoft/Okta validators are a documented manual gate (no API).
+- **Deferred (correctly out of scope here):** Group CRUD handlers' full async D1 IO body is sketched (Task 11) and unit-tested at the route/builder level; the per-tenant Durable Object version counter is named and its role specified, with the in-memory `Snapshot` proving the version/ETag semantics — the live DO RPC binding lands when Phase-2's DO seam is finalized. The Entra group status codes (**PATCH group → 204, DELETE group → 204**, no body — brief 06) are documented in the Task 12 matrix header and mapped by the dispatcher; the group-member PATCH ENGINE (add + both remove forms) is fully implemented and asserted now, while the 204 handler-layer assertion lands with the Group async D1 body. Decision-log emission (Rust host code) and the leaver saga (revoke grants/terminate sessions) belong to Phase 5 (control plane), per spec §4 Layer 3. The hosted Microsoft/Okta validators are a documented manual gate (no API).
 
 **Placeholder scan:** No "TBD/TODO/handle later" in code. Every code step is complete, compilable Rust. The only intentionally-deferred items are explicitly labeled and assigned: the async D1 IO *body* of the dispatcher (the load-bearing parameterized SQL builders, routing, and decision logic are complete and tested), the live DO version-counter binding, and the `database_id`/D1 id values that are environment-specific (`REPLACE_WITH_D1_ID`) and the action SHA-pins (Phase 9). Each is called out in-line.
 

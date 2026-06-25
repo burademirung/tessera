@@ -16,7 +16,7 @@
 - **Mover recalculates, never accumulates.** `grant = target − current`, `revoke = current − target`. An add-only Mover is a **bug** and has an explicit test asserting `revoke` is non-empty when `current` has entitlements absent from `target`.
 - **Reviewer ≠ grantor.** Access-review item assignment MUST exclude the identity that granted the entitlement; this is enforced in code and tested.
 - **NHIs own type + mandatory owner.** Service accounts get their own identity type and a **required human owner**; a human Leaver fans out to **transfer-or-rotate** every NHI they own.
-- **Per-cloud distinct token.** The orchestrator requests a **distinct RS256 token per cloud from the edge IdP** (correct `aud` each: AWS = registered client id; GCP = provider resource URL; Azure = `api://AzureADTokenExchange`), then exchanges it: AWS `sts:AssumeRoleWithWebIdentity`, GCP STS token exchange, Azure client-credentials with `client_assertion`. Pin exact `aud` + exact `sub` (never wildcards). Azure FICs have a propagation delay → build in delay + retry on `AADSTS70021`.
+- **Per-cloud distinct token.** The orchestrator requests a **distinct RS256 token per cloud from the edge IdP** (correct `aud` each: AWS = `sts.amazonaws.com`; GCP = WIF provider resource URL; Azure = `api://AzureADTokenExchange`), then exchanges it: AWS `sts:AssumeRoleWithWebIdentity`, GCP STS token exchange, Azure client-credentials with `client_assertion`. The mint call is `POST {edgeBase}/federate` with body `{"cloud":"aws|azure|gcp","sub":"..."}` and response `{"token":"..."}`. Pin exact `aud` + exact `sub` (never wildcards). The federation `sub` MUST be ≤127 chars (GCP subject limit); the convention is `lifecycle:federation:<env>`. Azure FICs have a propagation delay → build in delay + retry on `AADSTS70021`.
 - **Writes state to D1/DO and audit to R2 via the edge API.** The control plane never opens a D1/R2 connection directly; it calls the edge API over HTTPS. Audit is **append-only with `seq`/`record_hash`/`prev_hash` hash-chaining**; **never log tokens/credentials**; **redact before hash + write** (research 02 §6; AU-9/AU-10).
 
 ---
@@ -786,22 +786,25 @@ func TestEmitRedactsSecretsBeforeWrite(t *testing.T) {
 func TestEmitDoesNotAdvanceOnSinkFailure(t *testing.T) {
 	s := &fakeSink{failOn: 2}
 	c := NewChain(s)
-	if _, err := c.Emit(context.Background(), ev("a", "u1", nil)); err != nil {
+	r1, err := c.Emit(context.Background(), ev("a", "u1", nil))
+	if err != nil {
 		t.Fatalf("emit1: %v", err)
 	}
 	if _, err := c.Emit(context.Background(), ev("b", "u1", nil)); err == nil {
 		t.Fatal("expected sink failure to propagate")
 	}
-	// Retry must reuse seq 2 and chain off record 1.
-	r, err := (&fakeSink{}).Append, error(nil) // placeholder to keep imports honest
-	_ = r
-	_ = err
+	// Clear the injected failure and retry: the chain must reuse seq 2 and chain
+	// off record 1 (a failed Append must not advance seq/prev-hash).
+	s.failOn = 0
 	r2, err := c.Emit(context.Background(), ev("b-retry", "u1", nil))
 	if err != nil {
 		t.Fatalf("retry: %v", err)
 	}
 	if r2.Seq != 2 {
 		t.Fatalf("retry seq = %d, want 2 (failure must not advance)", r2.Seq)
+	}
+	if r2.PrevHash != r1.RecordHash {
+		t.Fatalf("retry must chain off record 1: PrevHash %q != %q", r2.PrevHash, r1.RecordHash)
 	}
 }
 ```
@@ -1943,10 +1946,10 @@ git commit -m "feat(control-plane): NHI lifecycle with leaver transfer-or-rotate
 - Consumes: nothing external (HTTP doer injected).
 - Produces:
   - `type Cloud string` with `CloudAWS = "aws"`, `CloudGCP = "gcp"`, `CloudAzure = "azure"`.
-  - `type Audiences struct { AWS, GCP, Azure string }` — distinct `aud` per cloud (AWS client id; GCP provider resource URL; Azure `api://AzureADTokenExchange`).
+  - `type Audiences struct { AWS, GCP, Azure string }` — distinct `aud` per cloud (AWS = `sts.amazonaws.com`; GCP = WIF provider resource URL; Azure = `api://AzureADTokenExchange`). These are the exchange-time audiences consumed by Tasks 13–15; the mint call itself selects the per-cloud token by `cloud`.
   - `func AudienceFor(c Cloud, a Audiences) (string, error)`
   - `type HTTPDoer interface { Do(*http.Request) (*http.Response, error) }`
-  - `type TokenMinter struct { ... }` with `func NewTokenMinter(idpURL, subject string, auds Audiences, doer HTTPDoer) *TokenMinter` and `func (m *TokenMinter) MintFor(ctx context.Context, c Cloud) (string, error)` — POSTs to the edge IdP `/token` with the per-cloud `aud` + exact `sub`, returns the RS256 JWT. Validates a distinct token is requested per cloud (different `aud`).
+  - `type TokenMinter struct { ... }` with `func NewTokenMinter(edgeBase, subject string, auds Audiences, doer HTTPDoer) *TokenMinter` and `func (m *TokenMinter) MintFor(ctx context.Context, c Cloud) (string, error)` — POSTs to `{edgeBase}/federate` with body `{"cloud":"aws|azure|gcp","sub":"..."}` (exact `sub`, never a wildcard; `sub` MUST be ≤127 chars, GCP limit — convention `lifecycle:federation:<env>`) and reads `{"token":"..."}`, returning the RS256 JWT. Validates a distinct token is requested per cloud (different `cloud`).
 
 - [ ] **Step 1: Write the failing test**
 
@@ -1979,13 +1982,13 @@ func (d *capturingDoer) Do(req *http.Request) (*http.Response, error) {
 }
 
 func TestAudienceFor(t *testing.T) {
-	auds := Audiences{AWS: "aws-client-id", GCP: "//iam.googleapis.com/.../providers/p", Azure: "api://AzureADTokenExchange"}
+	auds := Audiences{AWS: "sts.amazonaws.com", GCP: "//iam.googleapis.com/projects/123456789012/locations/global/workloadIdentityPools/lifecycle-pool/providers/lifecycle-oidc", Azure: "api://AzureADTokenExchange"}
 	for _, tt := range []struct {
 		c    Cloud
 		want string
 	}{
-		{CloudAWS, "aws-client-id"},
-		{CloudGCP, "//iam.googleapis.com/.../providers/p"},
+		{CloudAWS, "sts.amazonaws.com"},
+		{CloudGCP, "//iam.googleapis.com/projects/123456789012/locations/global/workloadIdentityPools/lifecycle-pool/providers/lifecycle-oidc"},
 		{CloudAzure, "api://AzureADTokenExchange"},
 	} {
 		got, err := AudienceFor(tt.c, auds)
@@ -2001,7 +2004,7 @@ func TestAudienceFor(t *testing.T) {
 func TestMintForUsesDistinctAudience(t *testing.T) {
 	d := &capturingDoer{resp: `{"token":"header.payload.sig"}`}
 	auds := Audiences{AWS: "aws-aud", GCP: "gcp-aud", Azure: "az-aud"}
-	m := NewTokenMinter("https://idp.example/token", "repo:org/lifecycle:environment:production", auds, d)
+	m := NewTokenMinter("https://idp.lifecycle.example/federate", "repo:org/lifecycle:environment:production", auds, d)
 
 	tok, err := m.MintFor(context.Background(), CloudAWS)
 	if err != nil || tok != "header.payload.sig" {
@@ -2048,7 +2051,6 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
-	"io"
 	"net/http"
 )
 
@@ -2063,8 +2065,8 @@ const (
 
 // Audiences holds the distinct per-cloud audience values.
 type Audiences struct {
-	AWS   string // registered AWS OIDC client id
-	GCP   string // WIF provider resource URL
+	AWS   string // sts.amazonaws.com (AWS WIF audience for AssumeRoleWithWebIdentity)
+	GCP   string // WIF provider resource URL (//iam.googleapis.com/projects/.../providers/...)
 	Azure string // api://AzureADTokenExchange
 }
 
@@ -2132,7 +2134,6 @@ func (m *TokenMinter) MintFor(ctx context.Context, c Cloud) (string, error) {
 	if out.Token == "" {
 		return "", fmt.Errorf("empty token for %s", c)
 	}
-	_ = io.Discard
 	return out.Token, nil
 }
 ```
@@ -2467,7 +2468,9 @@ func TestExchangeWithRetryOnPropagation(t *testing.T) {
 }
 
 func TestExchangeWithRetryFailsFastOnOtherError(t *testing.T) {
-	api := failAlways{err: errors.New("AADSTS7000215: invalid client secret")}
+	// Pointer receiver so calls is observable to the test (a value receiver would
+	// count on a copy and always report 0 — the classic fake-receiver bug).
+	api := &failAlways{err: errors.New("AADSTS7000215: invalid client secret")}
 	in, _ := BuildAzureExchange("t", "c", "tok")
 	if _, err := ExchangeWithRetry(context.Background(), api, in, 5, func(int) {}); err == nil {
 		t.Fatal("non-propagation error must not be retried")
@@ -2482,28 +2485,15 @@ type failAlways struct {
 	calls int
 }
 
-func (f failAlways) Exchange(_ context.Context, _ AzureExchangeInput) (Credentials, error) {
-	// pointer receiver needed to count; use a helper instead.
+func (f *failAlways) Exchange(_ context.Context, _ AzureExchangeInput) (Credentials, error) {
+	f.calls++
 	return Credentials{}, f.err
 }
 ```
 
-> Note: `failAlways` above is value-receiver so `calls` won't increment; replace its use in the test with the pointer-based fake below before running. Use this corrected fake in the test file instead of `failAlways`:
-> ```go
-> type failAlwaysPtr struct {
-> 	err   error
-> 	calls int
-> }
-> func (f *failAlwaysPtr) Exchange(_ context.Context, _ AzureExchangeInput) (Credentials, error) {
-> 	f.calls++
-> 	return Credentials{}, f.err
-> }
-> ```
-> and in `TestExchangeWithRetryFailsFastOnOtherError` use `api := &failAlwaysPtr{err: errors.New("AADSTS7000215: invalid client secret")}`. Delete the value-receiver `failAlways` type.
+- [ ] **Step 2: Run to verify it fails**
 
-- [ ] **Step 2: Apply the fake correction, then run to verify it fails**
-
-Edit the test per the note (use `failAlwaysPtr`), then run: `cd control-plane && go test ./internal/federation/ -run 'TestBuildAzureExchange|TestExchangeWithRetry' -v`
+Run: `cd control-plane && go test ./internal/federation/ -run 'TestBuildAzureExchange|TestExchangeWithRetry' -v`
 Expected: FAIL (undefined symbols).
 
 - [ ] **Step 3: Write the Azure exchange + retry**
@@ -2621,11 +2611,8 @@ import (
 	"github.com/lifecycle/control-plane/internal/audit"
 )
 
-type okDoer struct{}
-
-func (okDoer) Do(req *fakeReq) {}
-
-type fakeReq struct{}
+// capturingDoer is reused from idp_test.go (same package). The orchestrator
+// mints via the real TokenMinter, so only the cloud-exchange APIs are stubbed.
 
 type stubAWS struct{ called bool }
 
@@ -2654,7 +2641,7 @@ func (nopSink) Append(_ context.Context, _ audit.Record) error { return nil }
 
 func TestFederateAll(t *testing.T) {
 	d := &capturingDoer{resp: `{"token":"h.p.s"}`}
-	m := NewTokenMinter("https://idp/token", "repo:org/r:environment:production",
+	m := NewTokenMinter("https://idp.lifecycle.example/federate", "repo:org/r:environment:production",
 		Audiences{AWS: "aws-aud", GCP: "gcp-aud", Azure: "az-aud"}, d)
 	aws, gcp, az := &stubAWS{}, &stubGCP{}, &stubAzure{}
 	o := NewOrchestrator(m, aws, gcp, az, audit.NewChain(nopSink{}))
@@ -2675,9 +2662,9 @@ func TestFederateAll(t *testing.T) {
 }
 ```
 
-> Note: delete the unused `okDoer`/`fakeReq` stubs above; the orchestrator reuses `capturingDoer` from `idp_test.go` (same package). Keep only the cloud stubs, `nopSink`, and `TestFederateAll`. Ensure `nopSink` is declared once in the package's test files (it is also used in offboard's own package; this one is local to `federation`).
+> Note: `capturingDoer` is reused from `idp_test.go` (same `federation` package, so test helpers are shared — do not redeclare it). `nopSink` is declared once here, local to the `federation` package's tests (the `offboard` package has its own separate `nopSink`).
 
-- [ ] **Step 2: Trim the stubs per the note, then run to verify it fails**
+- [ ] **Step 2: Run to verify it fails**
 
 Run: `cd control-plane && go test ./internal/federation/ -run TestFederateAll -v`
 Expected: FAIL (undefined `Orchestrator`/`NewOrchestrator`/`FederateAll`).
@@ -3230,10 +3217,10 @@ git commit -m "ci(control-plane): scheduled Cron workflow for reviews + offboard
 - NHI lifecycle (owner required; human leaver fans out transfer-or-rotate) → Tasks 2 (invariant), 11. ✓
 - Multi-cloud federation orchestrator — per-cloud RS256 token from edge IdP then exchange: AWS `sts:AssumeRoleWithWebIdentity`, GCP STS token exchange, Azure client-credentials with `client_assertion`, each behind an interface with brief-03 request shapes; Azure FIC propagation delay + retry; request construction unit-tested, no live calls → Tasks 12–16. ✓
 - Audit emitter: append-only `seq`/`record_hash`/`prev_hash` hash-chaining, never logs tokens, redact-before-write → Task 6 (reused in 8, 16). ✓
-- Writes state to D1/DO and audit to R2 via the edge API → `ports.StateStore` + `audit.Sink` are edge-API seams (Tasks 6, 7); adapters deferred to Phase 6 (called out in `cmd` TODOs + cron.md). ✓
+- Writes state to D1/DO and audit to R2 via the edge API → `ports.StateStore` + `audit.Sink` are edge-API seams (Tasks 6, 7); the concrete HTTP adapters are **Go code owned by this phase** (wired in `cmd/*/main.go`), exercising the Phase-6 Terraform-provisioned edge/clouds at runtime. ✓
 - GitHub Actions Cron workflow running access-review + offboarding-sweep, keyless OIDC to clouds, SHA-pin note left for Phase 9 → Task 18. ✓
 
-**Placeholder scan:** No "TBD/handle later" in domain/test code; every code step is complete, compilable Go. The only intentional deferrals are explicitly labeled and assigned to Phase 6 (concrete edge-API/cloud-SDK adapters wired in `cmd/*/main.go`, marked `TODO(adapters)`) and Phase 9 (workflow SHA-pinning + harden-runner + per-cloud OIDC login actions, marked in a `NOTE`). Tasks 15 and 16 carry an inline test-fixture correction note (value- vs pointer-receiver fake; unused stub trimming) the implementer applies before running — the production code in those tasks is complete.
+**Placeholder scan:** No "TBD/handle later" in domain/test code; every code step is complete, compilable Go as written. The only intentional deferrals are: the concrete adapter **wiring** in `cmd/*/main.go` (marked `TODO(adapters)`) — the adapter Go code (SCIM HTTP → `/scim/v2`, cloud-SDK, edge-API) is owned by **this phase** (Task 7 and Tasks 12–16 define the interfaces + request construction; the thin HTTP/SDK glue lives here, not in Phase 6 which is Terraform/CDK only); and Phase 9 (workflow SHA-pinning + harden-runner + per-cloud OIDC login actions, marked in a `NOTE`). The Task 15 Azure fake and the Task 16 orchestrator test are now correct as written (pointer-receiver fake so call counts are observable; no unused stubs), so no pre-run hand-edits are required.
 
 **Type/interface consistency (names reused across tasks):**
 - `domain.Identity` / `domain.Entitlement` / `domain.LifecycleState` / `domain.RiskTier` (Task 2) are consumed unchanged by Tasks 3, 4, 5, 7, 9, 10, 11.
@@ -3242,6 +3229,6 @@ git commit -m "ci(control-plane): scheduled Cron workflow for reviews + offboard
 - `audit.Chain` / `audit.Event` / `audit.Sink` / `audit.Record` (Task 6) are consumed unchanged by Tasks 8, 16, 17 (every cross-package use takes `*audit.Chain` and a `audit.Sink` fake).
 - `federation.Cloud` / `Credentials` / `Audiences` / `TokenMinter` / `STSAssumeRoleWebIdentityAPI` / `GCPSTSAPI` / `AzureTokenAPI` (Tasks 12–15) are consumed unchanged by the orchestrator (Task 16). `Credentials` is declared once (Task 13) and reused by GCP/Azure.
 - `offboard.SagaResult` / `offboard.RunLeaver` (Task 8) are consumed unchanged by `cli.RunOffboard` (Task 17).
-- `sod.PolicyEngine` (Task 9) is the same Zero-Trust seam as `ports.Revoker`/`SCIMClient`: external dependency behind an interface, faked in tests, real adapter deferred to Phase 6.
+- `sod.PolicyEngine` (Task 9) is the same Zero-Trust seam as `ports.Revoker`/`SCIMClient`: external dependency behind an interface, faked in tests, with the concrete HTTP/SDK adapter implemented as Go code in this phase (wired in `cmd/*/main.go`).
 
-**Deferred to later phases (correctly out of scope here):** concrete edge-API HTTP adapters for `SCIMClient`/`StateStore`/`Revoker`/`audit.Sink` and concrete cloud-SDK adapters implementing `STSAssumeRoleWebIdentityAPI`/`GCPSTSAPI`/`AzureTokenAPI` (Phase 6, alongside the Terraform trust modules they exchange against); the OPA/Regorus `PolicyEngine` implementation (Phase 4 authoring + edge eval); SLSA provenance / SBOM / harden-runner / SHA-pinning of the Cron workflow (Phase 9).
+**Owned by this phase (Go code), wired in `cmd/*/main.go`:** the concrete edge-API HTTP adapters for `SCIMClient` (calling the edge SCIM endpoint at `/scim/v2`), `StateStore`, `Revoker`, `audit.Sink`, and the concrete cloud-SDK adapters implementing `STSAssumeRoleWebIdentityAPI`/`GCPSTSAPI`/`AzureTokenAPI`. These run **against** the Phase-6 Terraform-provisioned trust + the Phase-2/3 edge endpoints at runtime, but the adapter code is Go and lives here. **Deferred to other phases (correctly out of scope):** the OPA/Regorus `PolicyEngine` implementation (Phase 4 authoring + edge eval); SLSA provenance / SBOM / harden-runner / SHA-pinning of the Cron workflow (Phase 9).

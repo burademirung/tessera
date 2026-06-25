@@ -86,7 +86,7 @@ Multi-cloud federation needs **trust + short-lived token exchange**, not running
                                         │  • Regorus (Rego v1) authz  ◀────┼── signed policy bundle (R2)
                                         │  • opaque sessions (Durable Obj) │
                                         └──┬──────────────┬───────────────┘
-                                           │ events       │ federated RS256 token
+                          phase-transition │ seam points  │ federated RS256 token
                             ┌──────────────▼───┐          ▼
    Native Go control plane  │ Telemetry: Queue │   Multi-cloud federation (live)
    (GitHub Actions Cron +   │ → Durable Object │   AWS STS · GCP WIF · Azure FIC

@@ -1059,29 +1059,55 @@ git commit -m "ci(policy): opa fmt --rego-v1 + check --strict + regal lint + cov
 
 **Files:**
 - Create: `edge/src/authz/mod.rs`
+- Create: `edge/src/authz/seam.rs` (move the Phase-2 `PolicyEngine` trait + `AuthzInput` + `AuthzDecision` here, unchanged)
 - Create: `edge/src/authz/engine.rs`
+- Delete: `edge/src/authz.rs` (Phase-2 single file → replaced by the `edge/src/authz/` directory module; its types move into `seam.rs` so all `crate::authz::*` imports still resolve)
 - Edit: `edge/Cargo.toml` (add the trimmed `regorus` dependency)
-- Edit: `edge/src/lib.rs` (declare `mod authz;` — the PEP seam)
+- Edit: `edge/src/lib.rs` (the existing `pub mod authz;` from Phase 2 now resolves to the directory module — no change needed beyond confirming it still compiles)
 
 **Interfaces:**
-- Consumes: the `policy/authz/*.rego` sources (embedded as `&str`) and a JSON data document; an `input` JSON value per request.
+- Consumes: the `policy/authz/*.rego` sources (embedded as `&str`) and a JSON data document; an `input` JSON value per request. **Reuses the Phase-2 seam types verbatim** (`edge/src/authz.rs` Task 12): the `PolicyEngine` **trait** (`fn evaluate(&self, input: &AuthzInput) -> AuthzDecision`), the `AuthzInput` struct, and the `AuthzDecision { Allow, Deny { reason } }` enum. **Do NOT redefine these** — Phase 2's Worker already depends on them (`DenyAllEngine: PolicyEngine`, matches `AuthzDecision::Deny { reason }`).
 - Produces:
-  - `pub struct PolicyEngine` wrapping `regorus::Engine`.
-  - `pub fn PolicyEngine::from_sources(policies: &[(&str, &str)], data_json: &str) -> Result<PolicyEngine, AuthzError>` (load `.rego` + `data`).
-  - `pub fn PolicyEngine::decide(&self, input_json: &str) -> AuthzDecision` — sets input, evaluates `data.authz.allow`, **fails closed** (any error/undefined/non-bool → `Deny`).
-  - `pub enum AuthzDecision { Allow, Deny }`, `pub enum AuthzError`.
+  - `pub struct RegorusEngine` wrapping `regorus::Engine` (a new concrete engine — NOT a redefinition of the `PolicyEngine` seam name).
+  - `impl PolicyEngine for RegorusEngine` — wires Regorus in behind the Phase-2 trait. The PEP keeps calling `evaluate(&AuthzInput)`; the wiring is transparent.
+  - `pub fn RegorusEngine::from_sources(policies: &[(&str, &str)], data_json: &str) -> Result<RegorusEngine, AuthzError>` (load `.rego` + `data`).
+  - `pub fn RegorusEngine::decide_json(&self, input_json: &str) -> AuthzDecision` — sets the four-category JSON `input`, evaluates `data.authz.allow`, **fails closed** (any error/undefined/non-bool → `Deny`). This raw-JSON path is what the conformance harness (Task 8) and bundle loader (Task 9) drive; the trait `evaluate` builds the JSON from `AuthzInput` and delegates here.
+  - `pub enum AuthzError`.
+  - `pub const ALLOW_QUERY: &str = "data.authz.allow";` (the canonical query — identical in `opa test`, `vectors.json`, the decision log path, and `eval_rule`).
   - Deterministic: the engine is constructed with no `time`/`rand`/`http` features; current time/posture arrive only inside `input`.
 
-> This is the seam the Phase-2 Worker calls (PEP → PE). The Worker passes the four-category `input` and the loaded `data`; it contains no policy logic.
+> The `PolicyEngine` trait + `AuthzDecision`/`AuthzInput` are the **stable seam Phase 2 reserved** — keep them byte-for-byte. The directory module `edge/src/authz/` (this phase) supersedes the Phase-2 single-file `edge/src/authz.rs`: **move** the Phase-2 seam types into `edge/src/authz/seam.rs` (re-exported from `edge/src/authz/mod.rs` so every existing `use crate::authz::{PolicyEngine, AuthzInput, AuthzDecision}` import keeps resolving), then add the Regorus impl in `engine.rs`. The Worker passes the four-category `input` and the loaded `data`; it contains no policy logic.
 
 - [ ] **Step 1: Add the trimmed Regorus dependency**
 
 Edit `edge/Cargo.toml`, add under `[dependencies]`:
 ```toml
-regorus = { version = "0.10", default-features = false, features = ["arc", "regex", "semver", "base64", "jsonschema"] }
+regorus = { version = "0.10", default-features = false, features = ["arc", "regex", "semver"] }
 serde_json = "1"
 ```
-(Omit `std`-pulling `time`/`rand`/`http`/`net`/`mimalloc` per research/07 — keeps eval deterministic.)
+(Trimmed feature set per research/07 + Global Constraints: `default-features=false` then add only `arc`, `regex`, `semver`. This deliberately omits the deterministic-breaking features — there is **no** `time`/`rand`/`http`/`net` feature enabled — and also omits `base64`/`jsonschema`, which the runtime authz policy does not use. The runtime policy relies only on core, non-feature-gated builtins: `graph.reachable`, `object.get`, `count`, `sprintf`, `in`, `every`. If the Task-8 conformance harness later proves a specific gated builtin is needed, add the single minimal flag then — never re-add `time`/`rand`/`http`/`net`.)
+
+- [ ] **Step 1b: Migrate the Phase-2 seam into the directory module (keep the contract)**
+
+Phase 2 created `edge/src/authz.rs` (a file) holding the `PolicyEngine` **trait**, `AuthzInput`, `AuthzDecision { Allow, Deny { reason } }`, and `DenyAllEngine`. This phase turns `authz` into a directory module. **Move that file to `edge/src/authz/seam.rs` unchanged** (so the trait/enum/struct definitions and their tests are preserved verbatim), then create `edge/src/authz/mod.rs` re-exporting them so every existing `use crate::authz::{PolicyEngine, AuthzInput, AuthzDecision, DenyAllEngine}` in the Phase-2 Worker keeps compiling:
+```bash
+cd /Users/vladinirkamenev/Documents/projects/lifecycle
+git mv edge/src/authz.rs edge/src/authz/seam.rs   # preserves history; types unchanged
+```
+Create `edge/src/authz/mod.rs`:
+```rust
+//! Authorization seam (Phase 4). The edge Worker is the PEP; this module is the
+//! bridge to the PE (Regorus). The Worker passes the four-category `input` and the
+//! loaded `data`; no policy logic lives here or in the Worker — only in Rego.
+//!
+//! `seam` holds the STABLE Phase-2 contract (trait + types); do not change it.
+mod seam;
+pub use seam::{AuthzDecision, AuthzInput, DenyAllEngine, PolicyEngine};
+
+mod engine;
+pub use engine::{AuthzError, RegorusEngine, ALLOW_QUERY};
+```
+Run: `cargo build -p edge 2>&1 | tail -20` — must still compile against the unchanged seam before adding the Regorus impl.
 
 - [ ] **Step 2: Write the failing engine test**
 
@@ -1112,12 +1138,19 @@ mod tests {
         "sod": {"toxic_pairs": [], "self_approval_actions": ["approve"]}
     }"#;
 
-    fn engine() -> PolicyEngine {
-        PolicyEngine::from_sources(
+    fn engine() -> RegorusEngine {
+        RegorusEngine::from_sources(
             &[("main.rego", MAIN), ("rbac.rego", RBAC), ("abac.rego", ABAC), ("sod.rego", SOD)],
             DATA,
         )
         .expect("engine builds")
+    }
+
+    // `decide_json` is the raw four-category-JSON path (also driven by the
+    // conformance harness and bundle loader). It returns the Phase-2
+    // `AuthzDecision`; `Deny { .. }` is matched ignoring the reason string.
+    fn is_allow(d: AuthzDecision) -> bool {
+        matches!(d, AuthzDecision::Allow)
     }
 
     #[test]
@@ -1125,7 +1158,7 @@ mod tests {
         let input = r#"{"subject":{"id":"u1","roles":["reader"],"tenant":"t1","mfa":false},
             "resource":{"type":"user","id":"r1","tenant":"t1"},"action":"read",
             "environment":{"now_epoch":1782259200,"device_posture":"byod"}}"#;
-        assert_eq!(engine().decide(input), AuthzDecision::Allow);
+        assert!(is_allow(engine().decide_json(input)));
     }
 
     #[test]
@@ -1133,18 +1166,41 @@ mod tests {
         let input = r#"{"subject":{"id":"u1","roles":["admin"],"tenant":"t1","mfa":false},
             "resource":{"type":"user","id":"r1","tenant":"t1"},"action":"delete",
             "environment":{"now_epoch":1782259200,"device_posture":"managed"}}"#;
-        assert_eq!(engine().decide(input), AuthzDecision::Deny);
+        assert!(!is_allow(engine().decide_json(input)));
     }
 
     #[test]
     fn fails_closed_on_malformed_input() {
         // Not JSON -> must Deny, never panic, never Allow.
-        assert_eq!(engine().decide("{not json"), AuthzDecision::Deny);
+        assert!(!is_allow(engine().decide_json("{not json")));
     }
 
     #[test]
     fn fails_closed_on_empty_input() {
-        assert_eq!(engine().decide("{}"), AuthzDecision::Deny);
+        assert!(!is_allow(engine().decide_json("{}")));
+    }
+
+    #[test]
+    fn implements_phase2_seam_trait() {
+        // The Regorus engine satisfies the STABLE Phase-2 `PolicyEngine` trait the
+        // Worker depends on. The thin Phase-2 `AuthzInput` (subject/action/resource/
+        // tenant, no roles/mfa/posture) maps to a four-category JSON with NO roles,
+        // so the RBAC envelope is empty -> the trait fails CLOSED (Deny with reason).
+        // The rich path the PEP actually feeds is `decide_json` with full input;
+        // Phase 5 widens `AuthzInput` (or passes JSON) when it wires real subjects.
+        use super::super::PolicyEngine;
+        let eng = engine();
+        let thin = AuthzInput {
+            subject: "u1".into(),
+            action: "read".into(),
+            resource: "user".into(),
+            tenant: "t1".into(),
+        };
+        // Fail-closed: no roles in the thin seam input -> Deny, and the reason is set.
+        match eng.evaluate(&thin) {
+            AuthzDecision::Deny { reason } => assert!(!reason.is_empty()),
+            AuthzDecision::Allow => panic!("thin seam input must not grant access"),
+        }
     }
 }
 ```
@@ -1152,22 +1208,18 @@ mod tests {
 - [ ] **Step 3: Run it to verify it fails**
 
 Run: `cargo test -p edge authz::engine 2>&1 | tail -20`
-Expected: FAIL (compile error — `PolicyEngine`, `AuthzDecision`, `from_sources`, `decide` do not exist).
+Expected: FAIL (compile error — `RegorusEngine`, `from_sources`, `decide_json`, `ALLOW_QUERY` do not exist yet; the seam types `AuthzInput`/`AuthzDecision`/`PolicyEngine` already exist from Phase 2 / Step 1b).
 
 - [ ] **Step 4: Write the real engine**
 
-Prepend to `edge/src/authz/engine.rs` (above the test module):
+Prepend to `edge/src/authz/engine.rs` (above the test module). Note: this **implements** the Phase-2 `PolicyEngine` trait — it does **not** redefine it — and reuses the Phase-2 `AuthzDecision`/`AuthzInput`:
 ```rust
+use super::seam::{AuthzDecision, AuthzInput, PolicyEngine};
 use regorus::{Engine, Value};
 
-/// The canonical decision query — identical to the string used by `opa test`.
+/// The canonical decision query — identical to the string used by `opa test`,
+/// `vectors.json`, and the decision-log `path`.
 pub const ALLOW_QUERY: &str = "data.authz.allow";
-
-#[derive(Debug, PartialEq, Eq, Clone, Copy)]
-pub enum AuthzDecision {
-    Allow,
-    Deny,
-}
 
 #[derive(Debug)]
 pub enum AuthzError {
@@ -1175,12 +1227,14 @@ pub enum AuthzError {
     Data(String),
 }
 
-/// The Policy Engine (PE). Deterministic: no time/rand/http — those arrive in `input`.
-pub struct PolicyEngine {
+/// The concrete Policy Engine (PE) backed by Regorus. Implements the STABLE
+/// Phase-2 `PolicyEngine` trait. Deterministic: no time/rand/http — those arrive
+/// in `input`. NOT a redefinition of the `PolicyEngine` seam name.
+pub struct RegorusEngine {
     base: Engine,
 }
 
-impl PolicyEngine {
+impl RegorusEngine {
     /// Load Rego policy sources + a JSON `data` document.
     pub fn from_sources(policies: &[(&str, &str)], data_json: &str) -> Result<Self, AuthzError> {
         let mut engine = Engine::new();
@@ -1197,51 +1251,71 @@ impl PolicyEngine {
         Ok(Self { base: engine })
     }
 
-    /// Evaluate `data.authz.allow` for one request. FAILS CLOSED: any error,
-    /// undefined result, or non-`true` value yields `Deny`.
-    pub fn decide(&self, input_json: &str) -> AuthzDecision {
+    /// Evaluate `data.authz.allow` for one raw four-category-JSON request.
+    /// FAILS CLOSED: any error, undefined result, or non-`true` value yields
+    /// `Deny { reason }`. This is the path the conformance harness + bundle loader
+    /// drive, and the path the trait `evaluate` delegates to.
+    pub fn decide_json(&self, input_json: &str) -> AuthzDecision {
         // Clone the prepared engine so each request gets a fresh input (per-request eval).
         let mut engine = self.base.clone();
 
         let input = match Value::from_json_str(input_json) {
             Ok(v) => v,
-            Err(_) => return AuthzDecision::Deny, // malformed input -> deny
+            // malformed input -> deny (fail closed)
+            Err(e) => return AuthzDecision::Deny { reason: format!("invalid input: {e}") },
         };
         engine.set_input(input);
 
         match engine.eval_rule(ALLOW_QUERY.to_string()) {
             Ok(Value::Bool(true)) => AuthzDecision::Allow,
-            _ => AuthzDecision::Deny, // false, undefined, error, or non-bool -> deny
+            // false, undefined, error, or non-bool -> deny (fail closed)
+            Ok(Value::Bool(false)) => AuthzDecision::Deny { reason: "policy denied".into() },
+            Ok(_) => AuthzDecision::Deny { reason: "non-boolean decision".into() },
+            Err(e) => AuthzDecision::Deny { reason: format!("policy eval error: {e}") },
         }
+    }
+}
+
+impl PolicyEngine for RegorusEngine {
+    /// Map the Phase-2 four-string `AuthzInput` into the four-category JSON the
+    /// policy expects, then delegate to `decide_json`. The thin seam carries no
+    /// roles/mfa/posture, so it fails closed until Phase 5 supplies a richer
+    /// subject; the rich runtime path is `decide_json` with full `input`.
+    fn evaluate(&self, input: &AuthzInput) -> AuthzDecision {
+        let json = serde_json::json!({
+            "subject": {"id": input.subject, "roles": [], "tenant": input.tenant},
+            "resource": {"type": input.resource, "tenant": input.tenant},
+            "action": input.action,
+            "environment": {},
+        })
+        .to_string();
+        self.decide_json(&json)
     }
 }
 ```
 
-Create `edge/src/authz/mod.rs`:
+> `edge/src/authz/mod.rs` was already created in Step 1b (re-exporting the seam types and `RegorusEngine`/`AuthzError`/`ALLOW_QUERY`). The original line below is superseded — the module wiring lives in `mod.rs`, and the seam types are imported from `super::seam` (NOT redeclared):
 ```rust
-//! Authorization seam (Phase 4). The edge Worker is the PEP; this module is the
-//! bridge to the PE (Regorus). The Worker passes the four-category `input`
-//! (subject/resource/action/environment) and the loaded `data`; no policy logic
-//! lives here or in the Worker — only in Rego.
-mod engine;
+// (superseded — see edge/src/authz/mod.rs from Step 1b)
+//! the directory module re-exports seam::{PolicyEngine, AuthzInput, AuthzDecision}
+//! and engine::{RegorusEngine, AuthzError, ALLOW_QUERY}.
 
-pub use engine::{AuthzДecision, AuthzError, PolicyEngine, ALLOW_QUERY};
+// (re-exports live in mod.rs from Step 1b — see above)
 ```
 
-> Replace the accidental non-ASCII `AuthzДecision` with `AuthzDecision` (typo guard — see Self-Review). Correct line:
+> The `mod.rs` re-export from Step 1b is the single source of the public names:
 > ```rust
-> pub use engine::{AuthzDecision, AuthzError, PolicyEngine, ALLOW_QUERY};
+> pub use seam::{AuthzDecision, AuthzInput, DenyAllEngine, PolicyEngine};
+> pub use engine::{AuthzError, RegorusEngine, ALLOW_QUERY};
 > ```
+> `AuthzDecision`/`AuthzInput`/`PolicyEngine` come from `seam` (the unchanged Phase-2 contract); `RegorusEngine`/`AuthzError`/`ALLOW_QUERY` are this phase's additions. Use the ASCII name `AuthzDecision` everywhere (homoglyph guard).
 
-Edit `edge/src/lib.rs` to declare the module (the PEP seam Phase 2 reserved):
-```rust
-mod authz;
-```
+`edge/src/lib.rs` already has `pub mod authz;` from Phase 2 (Task 12). It now resolves to the directory module — **no edit needed**; just confirm it compiles.
 
 - [ ] **Step 5: Run it to verify it passes**
 
 Run: `cargo test -p edge authz::engine 2>&1 | tail -20`
-Expected: PASS (4 tests: allow, deny-no-mfa, fail-closed-malformed, fail-closed-empty).
+Expected: PASS (5 tests: allow, deny-no-mfa, fail-closed-malformed, fail-closed-empty, implements-phase2-seam-trait).
 
 - [ ] **Step 6: Commit**
 
@@ -1261,7 +1335,7 @@ git commit -m "feat(edge): Regorus authz seam — PolicyEngine fails closed on d
 
 **Interfaces:**
 - Consumes: `policy/conformance/vectors.json` (the SAME file the `opa test` suite drives in Task 5) and the four `policy/authz/*.rego` sources.
-- Produces: a `#[cfg(test)]` harness that loads the embedded data block from `vectors.json`, builds the `PolicyEngine`, and asserts `decide(input) == want_allow` for every vector — proving the shipped Regorus semantics match the OPA-tested semantics.
+- Produces: a `#[cfg(test)]` harness that loads the embedded data block from `vectors.json`, builds the `RegorusEngine`, and asserts `decide_json(input)` allow/deny == `want_allow` for every vector — proving the shipped Regorus semantics match the OPA-tested semantics. Also asserts `vectors.json`'s `query` field == `ALLOW_QUERY` (`data.authz.allow`).
 
 - [ ] **Step 1: Add the dev-dependency for vector parsing**
 
@@ -1277,7 +1351,8 @@ Create `edge/src/authz/conformance.rs`:
 //! Replays the SAME vectors as the `opa test` suite (policy/conformance/vectors.json)
 //! through the shipped Regorus engine, so OPA-tested semantics == edge semantics.
 
-use super::engine::{AuthzDecision, PolicyEngine};
+use super::engine::{RegorusEngine, ALLOW_QUERY};
+use super::seam::AuthzDecision;
 use serde::Deserialize;
 
 const MAIN: &str = include_str!("../../../policy/authz/main.rego");
@@ -1304,14 +1379,14 @@ struct Vector {
 fn vectors_query_string_matches_engine() {
     let bundle: Bundle = serde_json::from_str(VECTORS).expect("vectors parse");
     // The query string in the shared file MUST equal the engine's compiled query.
-    assert_eq!(bundle.query, super::engine::ALLOW_QUERY);
+    assert_eq!(bundle.query, ALLOW_QUERY);
 }
 
 #[test]
 fn regorus_matches_opa_on_every_vector() {
     let bundle: Bundle = serde_json::from_str(VECTORS).expect("vectors parse");
     let data_json = bundle.data.to_string();
-    let engine = PolicyEngine::from_sources(
+    let engine = RegorusEngine::from_sources(
         &[("main.rego", MAIN), ("rbac.rego", RBAC), ("abac.rego", ABAC), ("sod.rego", SOD)],
         &data_json,
     )
@@ -1319,10 +1394,13 @@ fn regorus_matches_opa_on_every_vector() {
 
     let mut failures = Vec::new();
     for v in &bundle.vectors {
-        let want = if v.want_allow { AuthzDecision::Allow } else { AuthzDecision::Deny };
-        let got = engine.decide(&v.input.to_string());
-        if got != want {
-            failures.push(format!("vector {:?}: want {:?}, got {:?}", v.name, want, got));
+        // Compare on the allow/deny axis (the Phase-2 `Deny` carries a reason string).
+        let got_allow = matches!(engine.decide_json(&v.input.to_string()), AuthzDecision::Allow);
+        if got_allow != v.want_allow {
+            failures.push(format!(
+                "vector {:?}: want_allow {}, got_allow {}",
+                v.name, v.want_allow, got_allow
+            ));
         }
     }
     assert!(failures.is_empty(), "Regorus diverged from OPA:\n{}", failures.join("\n"));
@@ -1372,9 +1450,9 @@ git commit -m "test(edge): Regorus conformance harness replays opa-test vectors"
 - Consumes: the `policy/authz/*.rego` + data JSON; an Ed25519 keypair (the PA's signing key; public key pinned in the Worker).
 - Produces:
   - Artifact format: a JSON manifest `{ "version", "revision", "policies": {name: rego}, "data": {...}, "hashes": {name: sha256hex}, "data_hash": sha256hex }` plus a **detached** signature = Ed25519 over the canonical SHA-256 of the manifest's `hashes`+`data_hash`+`revision` (a JWT-over-hashes equivalent).
-  - `pub struct SignedBundle`, `pub fn SignedBundle::parse(bytes: &[u8]) -> Result<SignedBundle, AuthzError>`.
+  - `pub struct SignedBundle`, `pub fn SignedBundle::parse(bundle: &[u8], sig: &[u8]) -> Result<SignedBundle, AuthzError>`.
   - `pub fn SignedBundle::verify(&self, public_key: &[u8; 32]) -> Result<(), AuthzError>` — recompute hashes, verify signature; **reject on any mismatch** (the verifier-and-consumer-agree / fail-closed principle).
-  - `pub fn SignedBundle::into_engine(self) -> Result<PolicyEngine, AuthzError>` — verify must have succeeded first; builds the `PolicyEngine`.
+  - `pub fn SignedBundle::into_engine(self) -> Result<RegorusEngine, AuthzError>` — verify must have succeeded first; builds the concrete `RegorusEngine` (which implements the Phase-2 `PolicyEngine` trait).
   - `policy/tools/sign_bundle.py` produces a verifiable artifact + sig for tests (the Phase-5 Go PA will reimplement this).
 
 - [ ] **Step 1: Write the reference signer**
@@ -1502,7 +1580,7 @@ mod tests {
         let input = r#"{"subject":{"id":"u1","roles":["reader"],"tenant":"t1","mfa":false},
             "resource":{"type":"user","id":"r1","tenant":"t1"},"action":"read",
             "environment":{"now_epoch":1782259200,"device_posture":"byod"}}"#;
-        assert_eq!(engine.decide(input), super::super::AuthzDecision::Allow);
+        assert!(matches!(engine.decide_json(input), super::super::AuthzDecision::Allow));
     }
 
     fn hex_decode(s: &str) -> Vec<u8> {
@@ -1543,7 +1621,7 @@ Expected: FAIL (compile error — `SignedBundle`, `parse`, `verify`, `into_engin
 
 Prepend to `edge/src/authz/bundle.rs` (above the test module):
 ```rust
-use super::engine::{AuthzError, PolicyEngine};
+use super::engine::{AuthzError, RegorusEngine};
 use ed25519_dalek::{Signature, Verifier, VerifyingKey};
 use serde::Deserialize;
 use sha2::{Digest, Sha256};
@@ -1620,7 +1698,7 @@ impl SignedBundle {
     }
 
     /// Build the engine. Caller MUST have called `verify` first.
-    pub fn into_engine(self) -> Result<PolicyEngine, AuthzError> {
+    pub fn into_engine(self) -> Result<RegorusEngine, AuthzError> {
         let data_json = serde_json::to_string(&self.manifest.data)
             .map_err(|e| AuthzError::Data(e.to_string()))?;
         let policies: Vec<(&str, &str)> = self
@@ -1629,7 +1707,7 @@ impl SignedBundle {
             .iter()
             .map(|(k, v)| (k.as_str(), v.as_str()))
             .collect();
-        PolicyEngine::from_sources(&policies, &data_json)
+        RegorusEngine::from_sources(&policies, &data_json)
     }
 
     pub fn revision(&self) -> &str {
@@ -1927,7 +2005,9 @@ git commit -m "feat(policy): conftest IaC trust guardrails + verify unit tests +
   - `pub struct DecisionEvent` mirroring OPA's decision-log shape: `{ decision_id, path, input (masked), result, timestamp, revision }`.
   - `pub fn build_decision_event(decision_id, revision, input_json, allowed, now_rfc3339) -> DecisionEvent` — applies host-side masking (drops/obscures sensitive fields) **before** the event is serialized.
   - `pub fn DecisionEvent::to_json(&self) -> String`.
-  - Masking removes secrets and truncates identifiers (never log tokens/creds; truncate `subject.id`); the `path` is the canonical `data.authz.allow`.
+  - Masking removes secrets and truncates identifiers (never log tokens/creds; truncate `subject.id`); the `path` is the canonical `data.authz.allow` (= `ALLOW_QUERY`).
+
+> **Relation to Phase 2's `edge/src/decision_log.rs`:** Phase 2 shipped a generic `DecisionEvent`/`render_opa_event` whose `path` was a placeholder (`"lifecycle/authz/allow"`). This task adds the *authz-specific* event builder under `edge/src/authz/decision_log.rs` whose `path` is the canonical `ALLOW_QUERY` (`data.authz.allow`). The two do not collide (separate modules). When the PEP wires real authz decisions, it uses this `build_decision_event` (canonical path); the Phase-2 generic renderer, if still used elsewhere, must be fed `ALLOW_QUERY` for authz events so the `path` string stays `data.authz.allow` everywhere.
 
 - [ ] **Step 1: Write the failing decision-log test**
 
@@ -2026,7 +2106,13 @@ pub fn build_decision_event(
 /// Mirrors OPA's `data.system.log.mask`, implemented in host code.
 fn mask(mut v: serde_json::Value) -> serde_json::Value {
     const DROP_KEYS: [&str; 5] = ["password", "token", "secret", "authorization", "credential"];
-    if let serde_json::Value::Object(ref mut subject) = v["subject"] {
+    // Guard: only descend into `subject` if the top level is actually an object.
+    // (Avoids serde_json IndexMut auto-vivification on non-objects like Null from
+    // a parse failure.)
+    let serde_json::Value::Object(ref mut top) = v else {
+        return v;
+    };
+    if let Some(serde_json::Value::Object(subject)) = top.get_mut("subject") {
         for k in DROP_KEYS {
             subject.remove(k);
         }
@@ -2046,11 +2132,11 @@ mod decision_log;
 pub use decision_log::{build_decision_event, DecisionEvent};
 ```
 
-Edit `edge/src/authz/engine.rs` — add a convenience that returns both the decision and a bool the logger consumes (keeps the PEP one call away from a logged decision). Add to `impl PolicyEngine`:
+Edit `edge/src/authz/engine.rs` — add a convenience that returns the boolean the logger consumes (keeps the PEP one call away from a logged decision). Add to `impl RegorusEngine`:
 ```rust
     /// Convenience for the PEP: decide and report the boolean for logging.
     pub fn decide_bool(&self, input_json: &str) -> bool {
-        matches!(self.decide(input_json), AuthzDecision::Allow)
+        matches!(self.decide_json(input_json), AuthzDecision::Allow)
     }
 ```
 
@@ -2082,13 +2168,13 @@ git commit -m "feat(edge): host-emitted OPA-shaped decision log with host-side m
 - SoD matrix in Rego, evaluated **preventive** (request-time, folded into `allow`) AND **detective** (replay sweep `sod_findings`) → Task 4. ✓
 - Table-driven `opa test` suites + explicit default-deny test + coverage gate (`opa test --coverage --fail-on-empty`, ≥90%) → Tasks 1, 5. ✓
 - Regal lint + `opa fmt --rego-v1` CI gate → Tasks 1 (Makefile), 6 (workflow). ✓
-- Regorus Rust integration (`Engine::new`, `add_policy`, `add_data`, `set_input`, `eval_rule data.authz.allow`; deterministic — no time/rand/http; injected via input/data) → Task 7. ✓
+- Regorus Rust integration (`Engine::new`, `add_policy(String,String)`, `add_data(Value)`, `set_input(Value)`, `eval_rule("data.authz.allow")` returning `Result<Value>`; `Engine: Clone` for per-request isolation; deterministic — no time/rand/http; injected via input/data). **Implements the STABLE Phase-2 `PolicyEngine` trait** (does NOT redefine it) via a new concrete `RegorusEngine`; reuses Phase-2 `AuthzInput`/`AuthzDecision { Allow, Deny { reason } }` → Task 7. ✓ (API verified against docs.rs/regorus.)
 - Regorus conformance harness running the SAME vectors as `opa test` → Tasks 5 (shared `vectors.json`), 8 (Rust replay; asserts query string equality too). ✓
 - Signed policy-bundle distribution (versioned policy+data → R2; sign ourselves via detached Ed25519/JWT-over-hashes; verify in Worker before load; ETag/If-None-Match polling documented) → Task 9. ✓
 - REAL OPA signed bundles kept for the conftest/IaC side (`opa build --signing-key`, `.manifest`) → Task 10. ✓
 - conftest guardrails over `terraform show -json` plan in Rego v1 (`deny contains msg if {...}`) + `conftest verify` unit tests → Task 10. ✓
 - Host-emitted decision logging mirroring OPA event shape with masking in host code → Task 11. ✓
-- PEP=edge Worker (no policy logic) / PE=Regorus bundle / PA=Go control plane; PEP fails closed; re-evaluate per request → Tasks 7 (fail-closed `decide`, per-request `clone`), 9 (verify-before-load), `## Global Constraints`. ✓
+- PEP=edge Worker (no policy logic) / PE=Regorus bundle / PA=Go control plane; PEP fails closed; re-evaluate per request → Tasks 7 (fail-closed `decide_json`/`evaluate` — every non-`Bool(true)` branch incl. parse error, eval error, undefined, and non-bool returns `Deny`; per-request `self.base.clone()`), 9 (verify-before-load), `## Global Constraints`. ✓
 - Correctly deferred to later phases: the Go PA actually signing/pushing bundles + the Worker R2 poll loop wiring + immediate-revoke integration (Phase 5); Terraform modules the conftest fixtures stand in for (Phase 6); SHA-pinning/harden-runner of `policy-ci.yml` (Phase 9 — left as a labeled NOTE).
 
 **Placeholder scan:** No "TBD/TODO/handle later". Every code step contains complete, runnable Rego v1 or Rust. The only stand-ins are *fixtures by design* (the `plan_good.json`/`plan_bad.json` representing Phase-6 Terraform output, the `vectors.json` decision corpus, and the `sign_bundle.py` reference signer that the Phase-5 Go PA reimplements) — each is real, executable, and explicitly labeled as a forward seam.
@@ -2097,5 +2183,5 @@ git commit -m "feat(edge): host-emitted OPA-shaped decision log with host-side m
 - The decision query string is **`data.authz.allow`** everywhere: the Rego package is `authz` with rule `allow` (Task 1); `opa test` mocks query `authz.allow`/`data.authz.allow` (Tasks 1–5); the Regorus `ALLOW_QUERY` constant is `"data.authz.allow"` and `eval_rule(ALLOW_QUERY)` uses it (Task 7); the conformance harness asserts `bundle.query == ALLOW_QUERY` and `vectors.json` carries `"query": "data.authz.allow"` (Tasks 5, 8); the decision-log `path` is `ALLOW_QUERY` (Task 11). One string, asserted equal across both toolchains.
 - Rule names are stable across files: `allow`, `role_permits`, `abac_ok`, `abac_violations`, `sod_conflict`, `sod_findings`, `effective_roles`, `subject_permissions` — defined once, referenced unchanged. `default abac_ok := false` is removed once the real `abac_ok` rule lands (Task 3) to avoid a redundant default; `role_permits` likewise (Task 2).
 - Data document keys (`data.rbac.roles[*].{inherits,permissions}`, `data.abac.{mfa_required_actions,maintenance_windows,min_device_posture,posture_rank}`, `data.sod.{toxic_pairs,self_approval_actions}`) are identical between `policy/authz/data/*.json`, the test fixtures, `vectors.json`, the Rust unit-test `DATA`, and `sign_bundle.py`'s `DATA_FILES`.
-- Rust types are consistent: `PolicyEngine`, `AuthzDecision::{Allow,Deny}`, `AuthzError`, `SignedBundle`, `DecisionEvent` declared once and re-exported through `edge/src/authz/mod.rs`; the deliberate `AuthzДecision` typo in Task 7 Step 4 is flagged inline with the corrected line (a guard against a copy-paste homoglyph), and the Self-Review confirms the exported name is ASCII `AuthzDecision`.
+- Rust types are consistent and the **Phase-2 seam contract is preserved**: the `PolicyEngine` **trait**, `AuthzInput`, and `AuthzDecision { Allow, Deny { reason } }` are NOT redefined — they are moved unchanged into `edge/src/authz/seam.rs` (via `git mv edge/src/authz.rs`) and re-exported from `edge/src/authz/mod.rs`, so all existing `crate::authz::*` imports in the Phase-2 Worker still resolve and `DenyAllEngine: PolicyEngine` still compiles. Phase 4 adds a *new concrete* `RegorusEngine` (NOT named `PolicyEngine`) that `impl PolicyEngine for RegorusEngine`, plus `AuthzError`, `ALLOW_QUERY`, `SignedBundle`, `DecisionEvent`. The raw-JSON decision path is `decide_json` (driven by conformance + bundle); the trait `evaluate(&AuthzInput)` maps the thin seam input to four-category JSON and delegates (fail-closed for the role-less thin input). All public names are ASCII (homoglyph guard).
 - The Rego `import rego.v1` appears only in `policy/iac/trust.rego` (conftest side) where it is harmless/idiomatic; the runtime `authz` package omits it (no-op under OPA 1.0+, and Regorus defaults to v1) — consistent with research/04 guidance.

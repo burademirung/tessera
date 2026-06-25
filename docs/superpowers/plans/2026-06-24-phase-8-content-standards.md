@@ -4,9 +4,9 @@
 
 **Goal:** Build the per-technology premium content layer of the Lifecycle site: a type-safe Astro **content collection** (`technologies`) whose every entry is a Zod-validated brief carrying its name, tagline, the **standards it follows** (with RFC numbers + source URLs), the **best practices applied** (each claim citation-backed to a research-brief source URL), and a **real code sample**. Each entry renders as a crafted, light, accessible premium component (`TechnologySection`) with a live explanation, an accessible copy-microstate code block, a standards list and a cited best-practices list. A standards-index page lists all technologies; a "best practices we followed" page aggregates every cited claim. A Vitest schema/coverage suite fails if any requirement-map technology lacks an entry or any entry is missing a cited source URL; Playwright proves a page renders, headings are hierarchical, code blocks are present, and axe passes.
 
-**Architecture:** Static-first Astro (zero client JS for content) extending the Phase 1 shell. Content lives in `site/src/content/technologies/` as MDX, with frontmatter validated by a Zod schema in `site/src/content/config.ts`. The `TechnologySection` / `TechnologyCard` components are pure Astro (no hydration). Code blocks use Astro's built-in Shiki highlighting; the copy button is the **only** sprinkle of JS and is a tiny inline `<script>` with an accessible `aria-live` microstate — content remains fully readable with JS disabled. Every claim, standard, and code sample traces to a source URL pulled from `docs/superpowers/research/` briefs 01–11.
+**Architecture:** Static-first Astro (zero client JS for content) extending the Phase 1 shell. Content lives in `site/src/content/technologies/` as MDX, loaded by the Astro 5 **Content Layer** `glob()` loader and validated by a Zod schema in `site/src/content.config.ts` (the Astro 5 config location — `src/content/config.ts` is the deprecated legacy path). The `TechnologySection` / `TechnologyCard` components are pure Astro (no hydration). Code blocks use Astro's built-in Shiki highlighting; the copy button is the **only** sprinkle of JS and is a tiny inline `<script>` with an accessible `aria-live` microstate — content remains fully readable with JS disabled. Every claim, standard, and code sample traces to a source URL pulled from `docs/superpowers/research/` briefs 01–11.
 
-**Tech Stack:** Astro 5 content collections (`getCollection`, `defineCollection`, `z` from `astro:content`), MDX (`@astrojs/mdx`), Shiki (bundled with Astro), Vitest (schema + coverage unit tests, run in node not jsdom for the data tests), Playwright + `@axe-core/playwright` (render/hierarchy/code-block/axe). Reuses `Base.astro` and `tokens.css` from Phase 1.
+**Tech Stack:** Astro 5 Content Layer content collections (`getCollection`, `render`, `defineCollection`, `z` from `astro:content`; `glob` loader from `astro/loaders`), MDX (`@astrojs/mdx`), Shiki (bundled with Astro), Vitest (schema + coverage unit tests, run in node not jsdom for the data tests), Playwright + `@axe-core/playwright` (render/hierarchy/code-block/axe). Reuses `Base.astro` and `tokens.css` from Phase 1.
 
 ## Global Constraints
 
@@ -102,14 +102,14 @@ git commit -m "chore(site): add MDX + axe tooling for content collections"
 ### Task 2: Define the `technologies` content collection + Zod schema
 
 **Files:**
-- Create: `site/src/content/config.ts`
+- Create: `site/src/content.config.ts` (Astro 5 Content Layer config location)
 - Create: `site/src/lib/technologies.ts` (the canonical requirement-map id list + helpers, reused by tests and pages)
 - Test: `site/src/lib/technologies.test.ts`
 
 **Interfaces:**
 - Consumes: nothing.
 - Produces:
-  - `site/src/content/config.ts` exporting `collections = { technologies }` where `technologies = defineCollection({ type: 'content', schema })`.
+  - `site/src/content.config.ts` exporting `collections = { technologies }` where `technologies = defineCollection({ loader: glob({ pattern: '**/*.mdx', base: './src/content/technologies' }), schema })` (Astro 5 Content Layer — the legacy `type: 'content'` option is deprecated and `loader` replaces it).
   - The Zod schema (the load-bearing contract):
     ```ts
     const standard = z.object({
@@ -208,9 +208,10 @@ export const REQUIRED_TECH_KEYS = [
 export type TechKey = (typeof REQUIRED_TECH_KEYS)[number];
 ```
 
-Create `site/src/content/config.ts`:
+Create `site/src/content.config.ts`:
 ```ts
 import { defineCollection, z } from 'astro:content';
+import { glob } from 'astro/loaders';
 
 const standard = z.object({
   name: z.string().min(1),
@@ -224,7 +225,8 @@ const bestPractice = z.object({
 });
 
 const technologies = defineCollection({
-  type: 'content',
+  // Astro 5 Content Layer: `loader: glob()` replaces the deprecated `type: 'content'`.
+  loader: glob({ pattern: '**/*.mdx', base: './src/content/technologies' }),
   schema: z.object({
     name: z.string().min(1),
     tagline: z.string().min(1),
@@ -253,7 +255,7 @@ Expected: completes; generates `.astro/` content types with no schema error.
 - [ ] **Step 6: Commit**
 
 ```bash
-git add site/src/content/config.ts site/src/lib/technologies.ts site/src/lib/technologies.test.ts
+git add site/src/content.config.ts site/src/lib/technologies.ts site/src/lib/technologies.test.ts
 git commit -m "feat(site): technologies content collection + Zod schema + required-key list"
 ```
 
@@ -275,7 +277,7 @@ git commit -m "feat(site): technologies content collection + Zod schema + requir
   - `CodeBlock.astro` — props `{ code: string; lang: string; label: string }`. Renders Astro's `<Code>` (Shiki) inside a `<figure>` with `<figcaption>` showing the language as visible text, a focusable `<pre tabindex="0" aria-label={label}>` (the `<Code>` component's `<pre>` gets the attributes), and a real `<button>` copy control with an `aria-live="polite"` status span. Theme: Shiki `github-light` (dark glyphs on light, ≥4.5:1).
   - `StandardsList.astro` — props `{ standards: {name,rfc?,url}[] }`. Renders a `<dl>`: each standard's name (+ rfc as visible text) is the term, its source link is the definition. Links use the accent color.
   - `BestPracticesList.astro` — props `{ items: {claim,sourceUrl}[] }`. Renders a `<ul>` of claims, each with a trailing "source" link to the `sourceUrl`.
-  - `TechnologyCard.astro` — props `{ slug: string; name: string; tagline: string }`. A light soft-shadow card linking to `/standards/{slug}` (used on the index).
+  - `TechnologyCard.astro` — props `{ id: string; name: string; tagline: string }`. A light soft-shadow card linking to `/standards/{id}` (used on the index; `id` is the Astro 5 Content Layer entry id, which is the slug-like filename stem).
   - `TechnologySection.astro` — props `{ data: CollectionEntry<'technologies'>['data'] }` + a default `<slot />` for the rendered explanation. Layout: `<section>` with `<h2>{name}</h2>`, the tagline, the slotted explanation, `<h3>Code</h3>` + `CodeBlock`, `<h3>Standards it follows</h3>` + `StandardsList`, `<h3>Best practices applied</h3>` + `BestPracticesList`.
 
 - [ ] **Step 1: Add the Astro container test dependency**
@@ -478,10 +480,10 @@ const { items } = Astro.props;
 Create `site/src/components/TechnologyCard.astro`:
 ```astro
 ---
-interface Props { slug: string; name: string; tagline: string }
-const { slug, name, tagline } = Astro.props;
+interface Props { id: string; name: string; tagline: string }
+const { id, name, tagline } = Astro.props;
 ---
-<a class="techcard" href={`/standards/${slug}`}>
+<a class="techcard" href={`/standards/${id}`}>
   <h3 class="techcard__name">{name}</h3>
   <p class="techcard__tag">{tagline}</p>
 </a>
@@ -591,7 +593,7 @@ describe('technology entries — identity protocols', () => {
 });
 ```
 
-> Note: `getCollection` in Vitest requires Astro's content type generation. Add `"pretest": "astro sync"` to `site/package.json` scripts (or run `pnpm --dir site exec astro sync` before the test) so `astro:content` resolves. If `getCollection` cannot run under Vitest in your Astro minor, fall back to reading the MDX files with `gray-matter` and validating frontmatter against the exported Zod schema — keep the same assertions.
+> Note: `getCollection` in Vitest requires Astro's content type generation. Add `"pretest": "astro sync"` to `site/package.json` scripts (or run `pnpm --dir site exec astro sync` before the test) so `astro:content` resolves. If `getCollection` cannot run under Vitest in your Astro minor, fall back to reading the MDX files with `gray-matter` and re-validating frontmatter against the same Zod object — to enable that, export the bare schema (e.g. `export const technologySchema = z.object({ ... })`) from `content.config.ts` and reuse it in the test. Keep the same assertions.
 
 - [ ] **Step 2: Run it to verify it fails**
 
@@ -1680,12 +1682,12 @@ git commit -m "content(site): infrastructure & stack entries (Go, Rust, Terrafor
 
 **Files:**
 - Create: `site/src/pages/standards/index.astro`
-- Create: `site/src/pages/standards/[slug].astro`
+- Create: `site/src/pages/standards/[id].astro` (Astro 5: the entry field is `id`, not `slug`)
 - Test: `site/tests/standards.spec.ts` (Playwright + axe)
 
 **Interfaces:**
-- Consumes: `getCollection('technologies')`, `TechnologyCard`, `TechnologySection`, `Base.astro`.
-- Produces: `/standards/` listing every technology (one `<h1>`, cards sorted by `order`), and `/standards/{slug}` rendering one `TechnologySection` with the entry's `<Content />` body.
+- Consumes: `getCollection('technologies')`, `render` (from `astro:content`), `TechnologyCard`, `TechnologySection`, `Base.astro`.
+- Produces: `/standards/` listing every technology (one `<h1>`, cards sorted by `order`), and `/standards/{id}` rendering one `TechnologySection` with the entry's `<Content />` body.
 
 - [ ] **Step 1: Write the failing Playwright test**
 
@@ -1753,7 +1755,7 @@ const techs = (await getCollection('technologies')).sort(
     </p>
     <div style={`display:grid; gap:var(--space-3); margin-top:var(--space-4); grid-template-columns:repeat(auto-fill, minmax(280px, 1fr));`}>
       {techs.map((t) => (
-        <TechnologyCard slug={t.slug} name={t.data.name} tagline={t.data.tagline} />
+        <TechnologyCard id={t.id} name={t.data.name} tagline={t.data.tagline} />
       ))}
     </div>
   </main>
@@ -1762,21 +1764,22 @@ const techs = (await getCollection('technologies')).sort(
 
 - [ ] **Step 4: Write the detail page**
 
-Create `site/src/pages/standards/[slug].astro`:
+Create `site/src/pages/standards/[id].astro`:
 ```astro
 ---
 import Base from '../../layouts/Base.astro';
 import TechnologySection from '../../components/TechnologySection.astro';
-import { getCollection, type CollectionEntry } from 'astro:content';
+import { getCollection, render, type CollectionEntry } from 'astro:content';
 
 export async function getStaticPaths() {
   const techs = await getCollection('technologies');
-  return techs.map((entry) => ({ params: { slug: entry.slug }, props: { entry } }));
+  // Astro 5: entries expose `id` (no reserved `slug`); render() is a standalone import.
+  return techs.map((entry) => ({ params: { id: entry.id }, props: { entry } }));
 }
 
 interface Props { entry: CollectionEntry<'technologies'> }
 const { entry } = Astro.props;
-const { Content } = await entry.render();
+const { Content } = await render(entry);
 ---
 <Base title={`${entry.data.name} — Lifecycle`} description={entry.data.tagline}>
   <main>
@@ -1952,7 +1955,7 @@ const total = techs.reduce((n, t) => n + t.data.bestPractices.length, 0);
     {techs.map((t) => (
       <section style="margin-top:var(--space-5);" aria-labelledby={`bp-${t.data.requirementKey}`}>
         <h2 id={`bp-${t.data.requirementKey}`} style="font-size:1.3rem;">
-          <a href={`/standards/${t.slug}`} style="color:inherit; text-decoration:none;">{t.data.name}</a>
+          <a href={`/standards/${t.id}`} style="color:inherit; text-decoration:none;">{t.data.name}</a>
         </h2>
         <BestPracticesList items={t.data.bestPractices} />
       </section>
@@ -2014,7 +2017,7 @@ All 16 `REQUIRED_TECH_KEYS` have exactly one entry; the **Task 8 coverage test f
 
 **Placeholder scan (no TODO bodies):** OIDC is the fully-written exemplar (complete frontmatter + real prose body + real Rust code sample + cited URLs). All 15 remaining entries ship **complete filled frontmatter + a representative filled prose body + a real code sample**, not stubs — verified by: the Task 8 coverage test asserting `codeSample.trim().length > 10` and `bestPractices.length > 0` with valid `https?://` URLs for every entry; the Task 7/9 Playwright tests asserting code blocks render and source links resolve. No `TODO`, `TBD`, or `handle later` appears in any body. The only progressive-enhancement gap (clipboard copy) is explicitly designed so content is fully present without JS, and is asserted by the Task 7 "copy is progressive enhancement" test.
 
-**Schema / type consistency:** The Zod schema in `content/config.ts` (Task 2) — `{ name, tagline, order, requirementKey, standards:{name,rfc?,url}[], bestPractices:{claim,sourceUrl}[], codeSample, codeLang }` — is the single contract. `CodeBlock`/`StandardsList`/`BestPracticesList`/`TechnologySection` (Task 3) consume exactly those field shapes (`standards`→`{name,rfc?,url}`, `items`→`{claim,sourceUrl}`, `code`/`lang`/`label`). Every MDX entry's frontmatter (Tasks 4–6) matches the schema (validated at `astro sync` build time and by Vitest). `REQUIRED_TECH_KEYS` (Task 2) is the type-level source consumed by the coverage guard (Task 8) and matches each entry's `requirementKey`. Pages (Tasks 7, 9) consume `CollectionEntry<'technologies'>` and the same components, so a schema change surfaces as a type error across the whole layer.
+**Schema / type consistency:** The Zod schema in `content.config.ts` (Task 2) — `{ name, tagline, order, requirementKey, standards:{name,rfc?,url}[], bestPractices:{claim,sourceUrl}[], codeSample, codeLang }` — is the single contract. `CodeBlock`/`StandardsList`/`BestPracticesList`/`TechnologySection` (Task 3) consume exactly those field shapes (`standards`→`{name,rfc?,url}`, `items`→`{claim,sourceUrl}`, `code`/`lang`/`label`). Every MDX entry's frontmatter (Tasks 4–6) matches the schema (validated at `astro sync` build time and by Vitest). `REQUIRED_TECH_KEYS` (Task 2) is the type-level source consumed by the coverage guard (Task 8) and matches each entry's `requirementKey`. Pages (Tasks 7, 9) consume `CollectionEntry<'technologies'>` and the same components, so a schema change surfaces as a type error across the whole layer.
 
 **Accessibility / constraint adherence:** WCAG 2.2 AA enforced by axe in Tasks 7 and 9; heading hierarchy asserted (single `<h1>`, `<h2>` sections, `<h3>` sub-parts, no skipped levels — authored bodies use prose only so they never inject a stray heading); code blocks are focusable (`pre[tabindex="0"]`) with an `aria-label` and a real `<button>` + `aria-live` copy microstate; language shown as visible text not color; accent `#3B5BDB` reused from Phase 1 tokens only on links/CTA; reduced-motion respected on card hover and copy state; content is static-first zero-JS except the progressively-enhanced copy button.
 

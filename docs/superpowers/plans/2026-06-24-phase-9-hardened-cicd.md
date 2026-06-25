@@ -30,7 +30,7 @@
 | `zizmorcore/zizmor-action` | `v0.1.1` → SHA `e673c3917a1aef3c65c972347ed84ccd013ecda4` |
 | `ossf/scorecard-action` | `v2.4.0` → SHA `62b2cac7ed8198b15735ed49ab1e5cf35480ba46` |
 | `github/codeql-action/upload-sarif` | `v3.28.0` → SHA `48ab28a6f5dbc2a99bf1e0131198dd8f1df78169` |
-| Wrangler | pin `wranglerVersion: '4.20.0'` |
+| Wrangler | pin `wranglerVersion: '4.103.0'` |
 | Terraform | `terraform_version: '1.11.4'` (R2 `use_lockfile`) |
 
 > **Note on SHA accuracy:** the SHAs above are the canonical pins to write into the YAML; Step 0 of Task 1 resolves/confirms each with `gh api` and Dependabot keeps them current. Every `uses:` in this plan is written `owner/repo@<SHA> # vX.Y.Z` — the version comment is mandatory (zizmor + Dependabot both rely on it).
@@ -50,6 +50,7 @@
 - **gitleaks gate:** `gitleaks detect` fails the PR on any finding; no secrets in repo.
 - **Concurrency:** group per PR/ref with **`cancel-in-progress: false`** on apply/destroy/release workflows (never cancel an in-flight `terraform apply`/`destroy`); `pr-validate` may cancel.
 - **Ephemeral environments:** apply-on-PR (`pr-ephemeral`) + destroy-on-close (`pr-teardown`, using a **repo-scoped token** for environment deletion), plus a **tag-scoped TTL reaper** (`expires-at` tag, Resource Groups Tagging API, `cloud-nuke`) run from **EventBridge → Lambda** — **not** a scheduled GitHub workflow (those auto-disable after 60 days idle).
+- **Terraform state backend (Phase 6 contract):** state lives on Cloudflare R2 via the `s3` backend (`use_lockfile`). Every job that runs `terraform init` (pr-validate `iac-plan`, pr-ephemeral, pr-teardown, release `deploy`, nightly `drift`) must expose the R2 state-backend credentials as step `env:` — `AWS_ACCESS_KEY_ID` / `AWS_SECRET_ACCESS_KEY` (the R2 token's S3 creds) and the `R2_ACCOUNT_ID` for the endpoint — which Terraform's `s3` backend reads automatically. These are **distinct from** the OIDC-minted cloud-resource credentials (OIDC governs *what Terraform manages*; the R2 creds govern *where state is stored*). Keep them out of `run:` interpolation; pass via `env:`.
 
 ---
 
@@ -94,11 +95,15 @@ Create `.github/CICD_CONTRACT.md`:
 | `CLOUDFLARE_API_TOKEN` | production + pr environments | scoped account-owned token (CF has no OIDC) |
 | `CLOUDFLARE_ACCOUNT_ID` | repo var `vars.CLOUDFLARE_ACCOUNT_ID` | account id |
 | `ENV_CLEANUP_TOKEN` | repo secret | fine-grained PAT/app token with `administration:write` (Environments) for pr-teardown env deletion |
+| `AWS_ACCESS_KEY_ID` / `AWS_SECRET_ACCESS_KEY` | environments | the R2 token's S3 credentials for the Terraform `s3`/R2 **state backend** (Phase 6 contract); needed by every job that runs `terraform init`. These are state-backend creds only, NOT cloud-resource creds — those come from OIDC. |
+| `R2_ACCOUNT_ID` | repo var `vars.R2_ACCOUNT_ID` | Cloudflare account id for the R2 state-backend endpoint (`https://${R2_ACCOUNT_ID}.r2.cloudflarestorage.com`), used in `terraform init -backend-config` (Phase 6 contract) |
 
 ## Reaper
 - Tag every cloud resource `project=ident-fed-demo` + `expires-at=<RFC3339>`.
 - Reaper = EventBridge Scheduler (rate 1h) → Lambda → cloud-nuke (NOT a scheduled GHA workflow).
 ```
+
+> **Retrofit note (consumed by Task 14):** Phases 1 and 6 referenced the account id as `secrets.CLOUDFLARE_ACCOUNT_ID`. The account id is **not** a secret, so this phase deliberately promotes it to the repo variable `vars.CLOUDFLARE_ACCOUNT_ID` everywhere (including the retrofitted `deploy-site.yml` and the Phase 6 workflows). This is an intentional, contract-level change — not drift — and the Self-Review consistency check expects `vars.CLOUDFLARE_ACCOUNT_ID` (never `secrets.CLOUDFLARE_ACCOUNT_ID`) after Task 14. The scoped `CLOUDFLARE_API_TOKEN` stays an environment **secret** as before. Also align `wranglerVersion` to Phase 1's pin (`'4.103.0'`) when retrofitting `deploy-site.yml`.
 
 - [ ] **Step 2: Verify the contract has no unresolved placeholders for the names this phase controls**
 
@@ -867,10 +872,10 @@ jobs:
           terraform validate
       - name: Terraform plan (JSON for conftest)
         working-directory: terraform
-        env:
-          TF_VAR_environment: pr-${PR_NUMBER}
         run: |
-          terraform plan -input=false -out=tfplan
+          # PR_NUMBER comes from the job-level env: (shell-expanded here, NOT in an
+          # env: block — env: values are parsed by Actions, never run through a shell).
+          terraform plan -input=false -out=tfplan -var="environment=pr-${PR_NUMBER}"
           terraform show -json tfplan > plan.json
       - name: conftest on plan JSON
         working-directory: terraform
@@ -1028,10 +1033,10 @@ jobs:
           subscription-id: ${{ secrets.AZURE_SUBSCRIPTION_ID }}
       - name: Terraform apply (ephemeral, tagged for reaper)
         working-directory: terraform
-        env:
-          TF_VAR_environment: pr-${PR_NUMBER}
-          TF_VAR_expires_at: $(date -u -d '+8 hours' +%Y-%m-%dT%H:%M:%SZ)
         run: |
+          # Do NOT set TF_VAR_* in an env: block — env: values are not shell-expanded,
+          # so `pr-${PR_NUMBER}` and `$(date ...)` would be passed literally. Compute
+          # them here (PR_NUMBER is exposed to the shell via the job-level env:).
           terraform init -input=false
           EXPIRES="$(date -u -d '+8 hours' +%Y-%m-%dT%H:%M:%SZ)"
           terraform apply -auto-approve -input=false \
@@ -1048,7 +1053,7 @@ jobs:
         with:
           apiToken: ${{ secrets.CLOUDFLARE_API_TOKEN }}
           accountId: ${{ vars.CLOUDFLARE_ACCOUNT_ID }}
-          wranglerVersion: '4.20.0'
+          wranglerVersion: '4.103.0'
           workingDirectory: edge
           command: versions upload --tag pr-${{ env.PR_NUMBER }}
       - name: Compute preview URL
@@ -1183,7 +1188,7 @@ jobs:
         with:
           apiToken: ${{ secrets.CLOUDFLARE_API_TOKEN }}
           accountId: ${{ vars.CLOUDFLARE_ACCOUNT_ID }}
-          wranglerVersion: '4.20.0'
+          wranglerVersion: '4.103.0'
           workingDirectory: edge
           command: deployments list
 
@@ -1310,8 +1315,7 @@ jobs:
     needs: attest
     runs-on: ubuntu-latest
     permissions:
-      contents: read
-      id-token: read
+      contents: read   # gh attestation verify needs only GH_TOKEN + contents:read (no id-token)
     steps:
       - uses: ./.github/actions/harden-setup
         with:
@@ -1366,7 +1370,7 @@ jobs:
         with:
           apiToken: ${{ secrets.CLOUDFLARE_API_TOKEN }}
           accountId: ${{ vars.CLOUDFLARE_ACCOUNT_ID }}
-          wranglerVersion: '4.20.0'
+          wranglerVersion: '4.103.0'
           workingDirectory: edge
           command: deploy --env production
 ```
@@ -1764,12 +1768,14 @@ git commit -m "ci: weekly OpenSSF Scorecard with SARIF upload"
 
 ### Task 14: Retrofit all earlier-phase workflows to SHA-pinned + hardened
 
-Convert `deploy-site.yml` (Phase 1), `terraform.yml`/`cdk.yml`/`destroy.yml` (Phase 6), and the control-plane Cron workflow (Phase 5) to the hardened baseline: SHA-pins, `permissions: contents: read` top-level, harden-runner first (via the composite action), CF token / OIDC contract, pinned `wranglerVersion`.
+Convert `deploy-site.yml` (Phase 1), `scim-conformance.yml` (Phase 3), `policy-ci.yml` (Phase 4), `terraform.yml`/`cdk.yml`/`destroy.yml`/`infracost.yml` (Phase 6), and `control-plane-cron.yml` (Phase 5) to the hardened baseline: SHA-pins, `permissions: contents: read` top-level, harden-runner first (via the composite action), CF token / OIDC contract, pinned `wranglerVersion`. These are the EXACT filenames created by the earlier phases — match them, do not invent new ones.
 
 **Files:**
-- Modify: `.github/workflows/deploy-site.yml`
-- Modify: `.github/workflows/terraform.yml`, `.github/workflows/cdk.yml`, `.github/workflows/destroy.yml` (if present from Phase 6)
-- Modify: `.github/workflows/control-plane-cron.yml` (Phase 5 Cron, if present)
+- Modify: `.github/workflows/deploy-site.yml` (Phase 1)
+- Modify: `.github/workflows/scim-conformance.yml` (Phase 3)
+- Modify: `.github/workflows/policy-ci.yml` (Phase 4)
+- Modify: `.github/workflows/terraform.yml`, `.github/workflows/cdk.yml`, `.github/workflows/destroy.yml`, `.github/workflows/infracost.yml` (Phase 6)
+- Modify: `.github/workflows/control-plane-cron.yml` (Phase 5 Cron)
 
 **Interfaces:**
 - Produces: every pre-existing workflow passes `ci-lint.yml` (actionlint + zizmor + grep guard).
@@ -1821,21 +1827,21 @@ jobs:
         with:
           apiToken: ${{ secrets.CLOUDFLARE_API_TOKEN }}
           accountId: ${{ vars.CLOUDFLARE_ACCOUNT_ID }}
-          wranglerVersion: '4.20.0'
+          wranglerVersion: '4.103.0'
           workingDirectory: site
           command: pages deploy ./dist --project-name lifecycle-site
 ```
 
 - [ ] **Step 3: Apply the same conversion checklist to each remaining earlier workflow**
 
-For each of `terraform.yml`, `cdk.yml`, `destroy.yml`, `control-plane-cron.yml` (whichever exist), apply this manual checklist:
+For each of `terraform.yml`, `cdk.yml`, `destroy.yml`, `infracost.yml`, `control-plane-cron.yml` (the exact files created by Phases 5/6), apply this manual checklist:
 1. Add top-level `permissions: contents: read`.
 2. Replace the leading `harden-runner`/`checkout`/`setup-*` steps with `- uses: ./.github/actions/harden-setup` (pass `toolchain:` + `egress-policy: audit`).
 3. SHA-pin every remaining `uses:` from the header table; append `# vX.Y.Z`. For any action not in the table, resolve its SHA:
    ```bash
    gh api repos/OWNER/ACTION/commits/TAG --jq .sha
    ```
-4. Cloud auth jobs: add per-job `permissions: { id-token: write, contents: read }`; use the three OIDC login steps verbatim from Task 8; Cloudflare uses the scoped token + `wranglerVersion: '4.20.0'`.
+4. Cloud auth jobs: add per-job `permissions: { id-token: write, contents: read }`; use the three OIDC login steps verbatim from Task 8; Cloudflare uses the scoped token + `wranglerVersion: '4.103.0'`.
 5. apply/destroy/cron workflows: set `concurrency: { group: <name>, cancel-in-progress: false }`.
 6. Route any `${{ github.event.* }}` / head-ref into `env:` and reference `"$VAR"` in `run:`.
 
@@ -1881,7 +1887,7 @@ git commit -m "ci: retrofit earlier-phase workflows to SHA-pinned + hardened bas
 | --- | --- |
 | Keyless OIDC AWS/GCP/Azure pinned to `environment:NAME` StringEquals | Tasks 0 (contract), 7/8/9/10/11 (login steps + `environment:`) |
 | Cloudflare no OIDC → scoped account-owned token as gated env secret | Tasks 0, 8, 9, 10, 14 |
-| pin `wranglerVersion` | Tasks 8, 9, 10, 14 (`'4.20.0'`) |
+| pin `wranglerVersion` | Tasks 8, 9, 10, 14 (`'4.103.0'`) |
 
 **§4 Layer 6 — Supply chain bullet:**
 | Requirement | Task |
@@ -1930,13 +1936,13 @@ grep -rhoE 'environment:?[[:space:]]*\n?[[:space:]]*(name:[[:space:]]*)?(product
 echo "=== secrets referenced ==="
 grep -rhoE 'secrets\.[A-Z_]+' .github/workflows | sort -u
 echo "=== cross-check against contract ==="
-grep -oE '(AWS_ROLE_ARN|GCP_WIF_PROVIDER|AZURE_CLIENT_ID|AZURE_TENANT_ID|AZURE_SUBSCRIPTION_ID|CLOUDFLARE_API_TOKEN|ENV_CLEANUP_TOKEN)' .github/CICD_CONTRACT.md | sort -u
+grep -oE '(AWS_ROLE_ARN|GCP_WIF_PROVIDER|AZURE_CLIENT_ID|AZURE_TENANT_ID|AZURE_SUBSCRIPTION_ID|CLOUDFLARE_API_TOKEN|ENV_CLEANUP_TOKEN|AWS_ACCESS_KEY_ID|AWS_SECRET_ACCESS_KEY)' .github/CICD_CONTRACT.md | sort -u
 ```
-Expected: the set of `secrets.*` used in workflows is a subset of the contract's secret table; environments are exactly `production` and `pr-${{ github.event.number }}`; `vars.*` (AWS_REGION, CLOUDFLARE_ACCOUNT_ID) match the contract's repo-vars rows. Any name in a workflow not in `CICD_CONTRACT.md` is a bug — fix by aligning to Task 0.
+Expected: the set of `secrets.*` used in workflows is a subset of the contract's secret table; environments are exactly `production` and `pr-${{ github.event.number }}`; `vars.*` (AWS_REGION, CLOUDFLARE_ACCOUNT_ID, R2_ACCOUNT_ID) match the contract's repo-vars rows. Any name in a workflow not in `CICD_CONTRACT.md` is a bug — fix by aligning to Task 0. Note `CLOUDFLARE_ACCOUNT_ID` is a **var**, not a secret (Task 0 retrofit note) — a `secrets.CLOUDFLARE_ACCOUNT_ID` reference surviving Task 14 is the bug to catch.
 
 Manual consistency assertions (verified true by construction):
 - Environment names: `production` (release, deploy-site, nightly, build/deploy in release) and `pr-${{ github.event.number }}` (pr-validate iac-plan, pr-ephemeral, pr-teardown) — identical strings everywhere. ✓
 - Concurrency group sharing: `pr-ephemeral` and `pr-teardown` use the SAME group `pr-ephemeral-${{ github.event.number }}` so teardown serializes after apply (asserted in Task 9 Step 2). ✓
-- Secret names: `AWS_ROLE_ARN`, `GCP_WIF_PROVIDER`, `AZURE_CLIENT_ID/TENANT_ID/SUBSCRIPTION_ID`, `CLOUDFLARE_API_TOKEN`, `ENV_CLEANUP_TOKEN`; vars `AWS_REGION`, `CLOUDFLARE_ACCOUNT_ID` — all defined in Task 0 and used verbatim in Tasks 7–14. ✓
-- `wranglerVersion: '4.20.0'` and `terraform_version: '1.11.4'` are identical across all consumers (composite action + every workflow). ✓
+- Secret names: `AWS_ROLE_ARN`, `GCP_WIF_PROVIDER`, `AZURE_CLIENT_ID/TENANT_ID/SUBSCRIPTION_ID`, `CLOUDFLARE_API_TOKEN`, `ENV_CLEANUP_TOKEN`, and the R2 state-backend creds `AWS_ACCESS_KEY_ID`/`AWS_SECRET_ACCESS_KEY`; vars `AWS_REGION`, `CLOUDFLARE_ACCOUNT_ID`, `R2_ACCOUNT_ID` — all defined in Task 0 and used verbatim in Tasks 7–14. ✓
+- `wranglerVersion: '4.103.0'` and `terraform_version: '1.11.4'` are identical across all consumers (composite action + every workflow). ✓
 - The reusable-attest workflow's `--certificate-identity-regexp` in Task 10 matches the reusable workflow path `.github/workflows/reusable-attest.yml` produced in Task 4. ✓

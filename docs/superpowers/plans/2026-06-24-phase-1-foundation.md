@@ -6,7 +6,7 @@
 
 **Architecture:** Static-first Astro (zero client JS on content) with one `client:only="react"` island for the 3D graph. The island runs a capability gate (reduced-motion / Save-Data / WebGL / GPU tier) and chooses one of four render modes via a single fallback ladder. The **SVG graph is the source of truth** and triple-duties as the accessibility equivalent, the reduced-motion alternative, and the low-end fallback. No live telemetry yet (Phase 7); the 3D graph renders the static topology.
 
-**Tech Stack:** Astro 5 (static, no adapter), React 18, `@react-three/fiber` + `@react-three/drei` + `three`, `@pmndrs/detect-gpu`, `zustand` (wired for Phase 7), TypeScript (strict), Vitest + `@testing-library/react` + jsdom (unit), Playwright (e2e/a11y), pnpm, Wrangler (Pages deploy).
+**Tech Stack:** Astro 5 (static, no adapter), React 19 (required by `@react-three/fiber` v9 and current `@astrojs/react`), `@react-three/fiber` + `@react-three/drei` + `three`, `@pmndrs/detect-gpu`, `zustand` (wired for Phase 7), TypeScript (strict), Vitest + `@testing-library/react` (v16+, React 19-compatible) + jsdom (unit), Playwright (e2e/a11y), pnpm, Wrangler (Pages deploy).
 
 ## Global Constraints
 
@@ -16,7 +16,7 @@
 - **Accessibility:** WCAG 2.2 AA. Node types distinguished by **icon + text label, never color alone**. Contrast ≥ 4.5:1 on the light theme. Canvas gets `role="img"` + `aria-label`; decorative duplicates `aria-hidden`. Pulse/motion ≤ 3 flashes/sec; a visible Pause control exists (wired in Phase 7).
 - **Design tokens (verbatim):** background `#FAFAFB`; text `#1A1A1F`; single reserved accent `#3B5BDB` used **only** on active/flowing edges and the primary CTA; 8pt spacing grid; one variable font; ease-out `cubic-bezier(0.4, 0, 0.2, 1)` ~240ms.
 - **The seven graph nodes (canonical ids/labels, used by SVG and 3D):** `idp` ("Identity Provider"), `edge` ("Edge Engine"), `opa` ("Policy (OPA/Regorus)"), `control` ("Control Plane"), `aws` ("AWS"), `azure` ("Azure"), `gcp` ("GCP").
-- **Cloudflare deploy:** Cloudflare has no GitHub OIDC — deploy with a least-privilege **account-owned scoped API token** ("Edit Cloudflare Workers/Pages"), never the global key. Pin `wranglerVersion`.
+- **Cloudflare deploy:** Cloudflare has no GitHub OIDC — deploy with a least-privilege **account-owned scoped API token** (custom token with the `Cloudflare Pages: Edit` permission group, account-scoped), never the global key. Pin `wranglerVersion`.
 - **R3F discipline:** `frameloop="demand"`; nodes/edges via drei `<Instances>` with shared `useMemo` geometry/material; `dispose={null}` on shared resources; never `setState` per frame.
 
 ---
@@ -24,9 +24,10 @@
 ### Task 1: Project scaffold + tooling
 
 **Files:**
-- Create: `site/package.json`, `site/astro.config.mjs`, `site/tsconfig.json`, `site/vitest.config.ts`, `site/playwright.config.ts`, `site/.gitignore`
-- Create: `site/src/env.d.ts`
+- Create (scaffolded): `site/package.json`, `site/astro.config.mjs`, `site/tsconfig.json`, `site/.gitignore`, `site/src/env.d.ts`
+- Create: `site/vitest.config.ts`, `site/vitest.setup.ts`
 - Test: `site/src/lib/__tests__/smoke.test.ts`
+- Note: `site/playwright.config.ts` is created in Task 8 (when the first e2e test exists).
 
 **Interfaces:**
 - Consumes: nothing (first task).
@@ -37,11 +38,12 @@
 Run:
 ```bash
 cd /Users/vladinirkamenev/Documents/projects/lifecycle
-pnpm create astro@latest site -- --template minimal --no-install --no-git --typescript strict --skip-houston
+pnpm create astro@latest site --template minimal --install --no-git --typescript strict --skip-houston
 cd site
+# Installs React 19 + @astrojs/react and wires the integration into astro.config.mjs.
 pnpm astro add react --yes
-pnpm add three @react-three/fiber @react-three/drei maath zustand @pmndrs/detect-gpu
-pnpm add -D vitest @testing-library/react @testing-library/jest-dom jsdom @types/three @playwright/test
+pnpm add three @react-three/fiber @react-three/drei zustand @pmndrs/detect-gpu
+pnpm add -D vitest @testing-library/react @testing-library/jest-dom jsdom @types/three @playwright/test @vitejs/plugin-react
 ```
 
 - [ ] **Step 2: Configure static output**
@@ -82,10 +84,7 @@ Create `site/vitest.setup.ts`:
 import '@testing-library/jest-dom/vitest';
 ```
 
-Add `@vitejs/plugin-react`:
-```bash
-pnpm add -D @vitejs/plugin-react
-```
+(`@vitejs/plugin-react` was installed in Step 1.)
 
 - [ ] **Step 4: Add scripts to `site/package.json`**
 
@@ -654,6 +653,12 @@ export function nodePositions(): [number, number, number][] {
   return GRAPH_NODES.map((n) => [(n.x - 0.5) * 10, -(n.y - 0.5) * 6, 0]);
 }
 
+// Position for a single node id, derived from the shared model via getNode.
+function positionOf(id: (typeof GRAPH_NODES)[number]['id']): [number, number, number] {
+  const n = getNode(id);
+  return [(n.x - 0.5) * 10, -(n.y - 0.5) * 6, 0];
+}
+
 function Nodes() {
   const positions = useMemo(() => nodePositions(), []);
   return (
@@ -668,21 +673,13 @@ function Nodes() {
 }
 
 function Edges() {
-  const idx = useMemo(
-    () =>
-      GRAPH_NODES.reduce<Record<string, number>>((acc, n, i) => {
-        acc[n.id] = i;
-        return acc;
-      }, {}),
-    [],
-  );
-  const positions = useMemo(() => nodePositions(), []);
+  // drei <Line> requires at least 2 points; build straight node→node segments.
   return (
     <>
       {GRAPH_EDGES.map((e) => (
         <Line
           key={e.id}
-          points={[positions[idx[e.from]], positions[idx[e.to]]]}
+          points={[positionOf(e.from), positionOf(e.to)]}
           color="#E6E6EC"
           lineWidth={1}
         />
@@ -692,18 +689,22 @@ function Edges() {
 }
 
 export default function FlowGraph3D({ lite = false }: { lite?: boolean }) {
+  // Wrap in a div that carries the accessible name (WCAG 1.1.1). A raw <canvas>
+  // is invisible to AT; the SVG/poster remain the real fallbacks.
   return (
-    <Canvas
-      frameloop="demand"
-      dpr={lite ? 1.5 : [1, 2]}
-      camera={{ position: [0, 0, 12], fov: 45 }}
-      style={{ width: '100%', aspectRatio: '800 / 420' }}
-    >
-      <ambientLight intensity={0.8} />
-      <directionalLight position={[5, 5, 5]} intensity={0.6} />
-      <Nodes />
-      <Edges />
-    </Canvas>
+    <div role="img" aria-label="Identity flow graph" style={{ width: '100%', aspectRatio: '800 / 420' }}>
+      <Canvas
+        frameloop="demand"
+        dpr={lite ? 1.5 : [1, 2]}
+        camera={{ position: [0, 0, 12], fov: 45 }}
+        style={{ width: '100%', height: '100%' }}
+      >
+        <ambientLight intensity={0.8} />
+        <directionalLight position={[5, 5, 5]} intensity={0.6} />
+        <Nodes />
+        <Edges />
+      </Canvas>
+    </div>
   );
 }
 ```
@@ -897,7 +898,23 @@ import { IdentityGraph } from '../components/IdentityGraph';
         federation into AWS, Azure and GCP. Every technology real and running.
       </p>
       <figure style="margin:var(--space-3) 0; background:var(--color-surface); border:1px solid var(--color-border); border-radius:var(--radius); box-shadow:var(--shadow-2); padding:var(--space-3);">
-        <IdentityGraph client:only="react" posterSrc="/poster.svg" />
+        <IdentityGraph client:only="react" posterSrc="/poster.svg">
+          {/* slot="fallback": rendered on the server, shown until the island hydrates.
+              This eager <img> is the LCP element (canvas/SVG are never LCP candidates).
+              Plain eager <img> (not Astro <Image>) because the asset lives in /public.
+              The box is reserved via aspect-ratio so swapping to the live graph is CLS 0. */}
+          <img
+            slot="fallback"
+            src="/poster.svg"
+            alt="Identity flow graph (static)"
+            width={800}
+            height={420}
+            fetchpriority="high"
+            loading="eager"
+            decoding="sync"
+            style="display:block; width:100%; height:auto; aspect-ratio:800 / 420;"
+          />
+        </IdentityGraph>
         <figcaption style="color:var(--color-muted); font-size:0.9rem; margin-top:var(--space-2);">
           The whole solution: an identity flows from the IdP through the edge engine and policy, into the control plane and the three clouds.
         </figcaption>
@@ -945,6 +962,7 @@ export default defineConfig({
     command: 'pnpm build && pnpm preview --port 4321',
     port: 4321,
     reuseExistingServer: !process.env.CI,
+    timeout: 180_000, // build + preview can exceed the 60s default on a cold run
   },
   use: { baseURL: 'http://localhost:4321' },
 });
@@ -999,17 +1017,21 @@ Create `docs/deploy.md`:
 Cloudflare has no GitHub OIDC for Wrangler. Create a least-privilege,
 **account-owned** API token (not the global key):
 
-1. Cloudflare dashboard → Manage Account → API Tokens → Create Token.
-2. Template "Edit Cloudflare Workers"; scope to the account and the
-   `lifecycle-site` Pages project only.
+1. Cloudflare dashboard → Manage Account → API Tokens → Create Token →
+   "Create Custom Token".
+2. Grant the minimum permission for Pages deploys: **Account → Cloudflare Pages →
+   Edit**. Scope "Account Resources" to this account only. (The "Edit Cloudflare
+   Workers" template is broader than needed; Pages deploys only require the
+   `Cloudflare Pages: Edit` permission group.)
 3. Store it in the GitHub repo as the **environment** secret
    `CLOUDFLARE_API_TOKEN` under a `production` environment with required
    reviewers. Add `CLOUDFLARE_ACCOUNT_ID` likewise.
 
-Manual deploy (local):
+Manual deploy (local). Project name and output dir come from `site/wrangler.jsonc`
+(`name` + `pages_build_output_dir`), so no positional args are needed:
 
     pnpm --dir site build
-    pnpm --dir site exec wrangler pages deploy ./dist --project-name lifecycle-site
+    pnpm --dir site exec wrangler pages deploy
 ```
 
 - [ ] **Step 3: Write the deploy workflow (SHA-pin placeholders called out)**
@@ -1041,8 +1063,9 @@ jobs:
         with:
           apiToken: ${{ secrets.CLOUDFLARE_API_TOKEN }}
           accountId: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
-          wranglerVersion: '4.20.0'
-          command: pages deploy ./dist --project-name lifecycle-site
+          wranglerVersion: '4.103.0' # pin; bump to the current v4 at first run
+          # project name + output dir come from site/wrangler.jsonc; no positionals.
+          command: pages deploy
           workingDirectory: site
 ```
 
@@ -1071,8 +1094,9 @@ git commit -m "ci(site): Cloudflare Pages deploy pipeline with scoped token"
 - Shared graph model (7 canonical nodes) → Task 3. ✓
 - SVG graph = a11y + reduced-motion + low-end (one artifact) → Task 4, reused in Tasks 7/8. ✓
 - Capability gate + fallback ladder → Tasks 5, 7. ✓
-- R3F: `client:only` gated by IntersectionObserver, instancing, `frameloop="demand"`, `dispose={null}`, lazy + Suspense, poster `slot`/LCP → Tasks 6, 7, 8. ✓
-- Poster is LCP (canvas isn't); canvas box reserved via `aspect-ratio` (CLS 0) → Tasks 7, 8. ✓
+- R3F: `client:only` gated by IntersectionObserver, instancing, `frameloop="demand"`, `dispose={null}`, lazy + Suspense, poster `slot="fallback"`/LCP → Tasks 6, 7, 8. ✓
+- Poster is LCP (canvas/SVG aren't LCP candidates): the eager `slot="fallback"` `<img fetchpriority="high" loading="eager">` is server-rendered in the static HTML and paints before hydration; the island layers over it within the same `aspect-ratio` box → CLS 0. Plain eager `<img>` is used (not Astro `<Image>`) because the poster lives in `/public` (Astro `<Image>` requires ESM-imported assets). → Tasks 7, 8. ✓
+- Canvas/3D wrapper carries `role="img"` + `aria-label` (a raw `<canvas>` is invisible to AT) → Task 6. ✓
 - Deploy via scoped account-owned token, pinned `wranglerVersion`, no CF OIDC → Task 9. ✓
 - WCAG: role="img", labels not color-only, keyboard-focusable nodes, reduced-motion path → Tasks 4, 7, 8. ✓
 - Deferred to later phases (correctly out of scope here): live SSE telemetry + animated pulses + Pause control (Phase 7); per-technology content components (Phase 8); SHA-pinning/harden-runner/SLSA of the workflow (Phase 9 hardens; Task 9 leaves a pin note).
