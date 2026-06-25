@@ -14,9 +14,9 @@ allow if {
 	abac_ok
 }
 
-# role_permits is defined in rbac.rego (Task 2); the default keeps it a total
-# function so tests can bind `got := role_permits` even when no permission matches.
+# role_permits is defined in rbac.rego (Task 2); abac_ok in abac.rego (Task 3).
+# The defaults keep both total so tests can bind `got := <rule>` even when the
+# conditional body does not hold (otherwise `got` would be undefined).
 default role_permits := false
 
-# abac_ok is defined in abac.rego (Task 3).
 default abac_ok := false

@@ -1,0 +1,14 @@
+{
+	"abac": {
+		"mfa_required_actions": ["delete", "revoke", "approve", "update"],
+		"maintenance_windows": {
+			"policy": {"start_epoch": 0, "end_epoch": 0}
+		},
+		"min_device_posture": {
+			"delete": "managed",
+			"revoke": "managed",
+			"approve": "managed"
+		},
+		"posture_rank": {"unmanaged": 0, "byod": 1, "managed": 2}
+	}
+}
