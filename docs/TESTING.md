@@ -167,7 +167,7 @@ The `"coverage"` field in the JSON output must be ≥ `90.0`.
 
 | Tool | Notes |
 |------|-------|
-| Go 1.23 | `go version` |
+| Go 1.26 | `go version` |
 | `govulncheck` | `go install golang.org/x/vuln/cmd/govulncheck@latest` |
 
 ### Commands

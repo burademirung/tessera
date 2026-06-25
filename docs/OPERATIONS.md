@@ -43,7 +43,7 @@ IdP (Okta / Entra)          Cloud (AWS / GCP / Azure)
 ┌──────────────────────────────────┐
 │  control-plane  (GitHub Actions) │
 │  cmd/offboard · cmd/access-review│
-│  Go 1.23 · runs in CI cron      │
+│  Go 1.26 · runs in CI cron      │
 └──────────────────────────────────┘
                │  OIDC trust config
                ▼
@@ -64,8 +64,8 @@ IdP (Okta / Entra)          Cloud (AWS / GCP / Azure)
 |-----------|----------|-------------|-------------|
 | `edge/` | Rust → WASM | `src/lib.rs` | `wrangler deploy` / `scim-conformance.yml` |
 | `site/` | Static (pnpm) | `wrangler.jsonc` | `deploy-site.yml` |
-| `control-plane/cmd/offboard` | Go 1.23 | `cmd/offboard/main.go` | `control-plane-cron.yml` |
-| `control-plane/cmd/access-review` | Go 1.23 | `cmd/access-review/main.go` | `control-plane-cron.yml` |
+| `control-plane/cmd/offboard` | Go 1.26 | `cmd/offboard/main.go` | `control-plane-cron.yml` |
+| `control-plane/cmd/access-review` | Go 1.26 | `cmd/access-review/main.go` | `control-plane-cron.yml` |
 | `terraform/` | HCL | root module | `terraform.yml` / `destroy.yml` |
 | `cdk/` | TypeScript (CDK) | `bin/` | `cdk.yml` / `destroy.yml` |
 | `policy/` | Rego v1 | `authz/` | `policy-ci.yml` |
