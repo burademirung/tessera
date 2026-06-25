@@ -37,7 +37,12 @@ fn regorus_matches_opa_on_every_vector() {
     let bundle: Bundle = serde_json::from_str(VECTORS).expect("vectors parse");
     let data_json = bundle.data.to_string();
     let engine = RegorusEngine::from_sources(
-        &[("main.rego", MAIN), ("rbac.rego", RBAC), ("abac.rego", ABAC), ("sod.rego", SOD)],
+        &[
+            ("main.rego", MAIN),
+            ("rbac.rego", RBAC),
+            ("abac.rego", ABAC),
+            ("sod.rego", SOD),
+        ],
         &data_json,
     )
     .expect("engine builds");
@@ -45,7 +50,10 @@ fn regorus_matches_opa_on_every_vector() {
     let mut failures = Vec::new();
     for v in &bundle.vectors {
         // Compare on the allow/deny axis (the Phase-2 `Deny` carries a reason string).
-        let got_allow = matches!(engine.decide_json(&v.input.to_string()), AuthzDecision::Allow);
+        let got_allow = matches!(
+            engine.decide_json(&v.input.to_string()),
+            AuthzDecision::Allow
+        );
         if got_allow != v.want_allow {
             failures.push(format!(
                 "vector {:?}: want_allow {}, got_allow {}",
@@ -53,5 +61,9 @@ fn regorus_matches_opa_on_every_vector() {
             ));
         }
     }
-    assert!(failures.is_empty(), "Regorus diverged from OPA:\n{}", failures.join("\n"));
+    assert!(
+        failures.is_empty(),
+        "Regorus diverged from OPA:\n{}",
+        failures.join("\n")
+    );
 }

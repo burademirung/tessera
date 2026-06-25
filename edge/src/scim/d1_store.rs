@@ -35,33 +35,55 @@ pub struct Snapshot {
 
 impl UserStore for Snapshot {
     fn find_by_username(&self, tenant: &str, user_name: &str) -> Option<StoredUser> {
-        self.rows.iter().find(|s| s.tenant == tenant && s.body["userName"].as_str() == Some(user_name)).cloned()
+        self.rows
+            .iter()
+            .find(|s| s.tenant == tenant && s.body["userName"].as_str() == Some(user_name))
+            .cloned()
     }
     fn find_by_external_id(&self, tenant: &str, external_id: &str) -> Option<StoredUser> {
-        self.rows.iter().find(|s| s.tenant == tenant && s.body["externalId"].as_str() == Some(external_id)).cloned()
+        self.rows
+            .iter()
+            .find(|s| s.tenant == tenant && s.body["externalId"].as_str() == Some(external_id))
+            .cloned()
     }
     fn get(&self, tenant: &str, id: &str) -> Option<StoredUser> {
-        self.rows.iter().find(|s| s.tenant == tenant && s.body["id"].as_str() == Some(id)).cloned()
+        self.rows
+            .iter()
+            .find(|s| s.tenant == tenant && s.body["id"].as_str() == Some(id))
+            .cloned()
     }
     fn list(&self, tenant: &str, _page: &Page) -> (Vec<StoredUser>, usize) {
-        let v: Vec<StoredUser> = self.rows.iter().filter(|s| s.tenant == tenant).cloned().collect();
+        let v: Vec<StoredUser> = self
+            .rows
+            .iter()
+            .filter(|s| s.tenant == tenant)
+            .cloned()
+            .collect();
         let n = v.len();
         (v, n)
     }
     fn insert(&mut self, tenant: &str, _id: &str, body: Value) -> StoredUser {
-        let su = StoredUser { tenant: tenant.into(), version: 1, body };
+        let su = StoredUser {
+            tenant: tenant.into(),
+            version: 1,
+            body,
+        };
         self.rows.push(su.clone());
         su
     }
     fn replace(&mut self, tenant: &str, id: &str, body: Value) -> Option<StoredUser> {
-        let row = self.rows.iter_mut().find(|s| s.tenant == tenant && s.body["id"].as_str() == Some(id))?;
+        let row = self
+            .rows
+            .iter_mut()
+            .find(|s| s.tenant == tenant && s.body["id"].as_str() == Some(id))?;
         row.version += 1;
         row.body = body;
         Some(row.clone())
     }
     fn delete(&mut self, tenant: &str, id: &str) -> bool {
         let before = self.rows.len();
-        self.rows.retain(|s| !(s.tenant == tenant && s.body["id"].as_str() == Some(id)));
+        self.rows
+            .retain(|s| !(s.tenant == tenant && s.body["id"].as_str() == Some(id)));
         self.rows.len() != before
     }
 }
@@ -72,7 +94,10 @@ mod tests {
 
     #[test]
     fn select_sql_is_parameterized_and_ordered() {
-        let page = Page { start_index: 1, count: 50 };
+        let page = Page {
+            start_index: 1,
+            count: 50,
+        };
         let (sql, limit, offset) = select_by_filter_sql("user_name = ?", &page);
         assert!(sql.contains("WHERE tenant = ?"));
         assert!(sql.contains("user_name = ?"));

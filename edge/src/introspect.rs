@@ -68,13 +68,23 @@ mod tests {
     #[test]
     fn unauthenticated_caller_is_rejected() {
         assert!(!caller_is_authenticated(None, "s3cret-rs-token"));
-        assert!(!caller_is_authenticated(Some("Bearer wrong"), "s3cret-rs-token"));
-        assert!(caller_is_authenticated(Some("Bearer s3cret-rs-token"), "s3cret-rs-token"));
+        assert!(!caller_is_authenticated(
+            Some("Bearer wrong"),
+            "s3cret-rs-token"
+        ));
+        assert!(caller_is_authenticated(
+            Some("Bearer s3cret-rs-token"),
+            "s3cret-rs-token"
+        ));
     }
 
     #[test]
     fn active_session_introspection_includes_sub_and_exp() {
-        let r = introspection_response_from_session(SessionStatus::Active, Some("u-1"), Some(1_750_000_600));
+        let r = introspection_response_from_session(
+            SessionStatus::Active,
+            Some("u-1"),
+            Some(1_750_000_600),
+        );
         assert_eq!(r["active"], true);
         assert_eq!(r["sub"], "u-1");
         assert_eq!(r["exp"], 1_750_000_600u64);
@@ -82,10 +92,17 @@ mod tests {
 
     #[test]
     fn inactive_session_reveals_only_active_false() {
-        for s in [SessionStatus::Expired, SessionStatus::Revoked, SessionStatus::Unknown] {
+        for s in [
+            SessionStatus::Expired,
+            SessionStatus::Revoked,
+            SessionStatus::Unknown,
+        ] {
             let r = introspection_response_from_session(s, Some("u-1"), Some(123));
             assert_eq!(r["active"], false);
-            assert!(r.get("sub").is_none(), "must not leak sub for inactive token");
+            assert!(
+                r.get("sub").is_none(),
+                "must not leak sub for inactive token"
+            );
             assert!(r.get("exp").is_none());
         }
     }

@@ -21,7 +21,10 @@ mod tests {
         let input = b"hello\x00\x01\x02world";
         let encoded = b64url_encode(input);
         assert!(!encoded.contains('='), "must be unpadded");
-        assert!(!encoded.contains('+') && !encoded.contains('/'), "must be url-safe");
+        assert!(
+            !encoded.contains('+') && !encoded.contains('/'),
+            "must be url-safe"
+        );
         assert_eq!(b64url_decode(&encoded).unwrap(), input);
     }
 

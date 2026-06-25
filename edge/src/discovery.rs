@@ -31,7 +31,10 @@ pub fn openid_configuration(cfg: &IssuerConfig) -> Value {
 /// A consumer-side check (reused by the RP fetcher): the discovered `issuer`
 /// MUST equal the issuer we anchored to (reject mismatched-issuer metadata).
 pub fn validate_discovery(doc: &Value, expected_issuer: &str) -> Result<(), String> {
-    let got = doc.get("issuer").and_then(Value::as_str).ok_or("no issuer")?;
+    let got = doc
+        .get("issuer")
+        .and_then(Value::as_str)
+        .ok_or("no issuer")?;
     if got.trim_end_matches('/') != expected_issuer.trim_end_matches('/') {
         return Err(format!("issuer mismatch: {got} != {expected_issuer}"));
     }
@@ -43,7 +46,9 @@ mod tests {
     use super::*;
 
     fn cfg() -> IssuerConfig {
-        IssuerConfig { issuer: "https://idp.lifecycle.example".into() }
+        IssuerConfig {
+            issuer: "https://idp.lifecycle.example".into(),
+        }
     }
 
     #[test]
@@ -51,20 +56,34 @@ mod tests {
         let doc = openid_configuration(&cfg());
         assert_eq!(doc["issuer"], "https://idp.lifecycle.example");
         assert_eq!(doc["jwks_uri"], "https://idp.lifecycle.example/jwks");
-        assert_eq!(doc["authorization_endpoint"], "https://idp.lifecycle.example/authorize");
+        assert_eq!(
+            doc["authorization_endpoint"],
+            "https://idp.lifecycle.example/authorize"
+        );
         assert_eq!(doc["token_endpoint"], "https://idp.lifecycle.example/token");
-        assert_eq!(doc["introspection_endpoint"], "https://idp.lifecycle.example/introspect");
+        assert_eq!(
+            doc["introspection_endpoint"],
+            "https://idp.lifecycle.example/introspect"
+        );
     }
 
     #[test]
     fn advertises_both_algs_code_flow_and_s256_only() {
         let doc = openid_configuration(&cfg());
         let algs: Vec<&str> = doc["id_token_signing_alg_values_supported"]
-            .as_array().unwrap().iter().map(|v| v.as_str().unwrap()).collect();
+            .as_array()
+            .unwrap()
+            .iter()
+            .map(|v| v.as_str().unwrap())
+            .collect();
         assert!(algs.contains(&"EdDSA") && algs.contains(&"RS256"));
         assert_eq!(doc["response_types_supported"][0], "code");
         let pkce: Vec<&str> = doc["code_challenge_methods_supported"]
-            .as_array().unwrap().iter().map(|v| v.as_str().unwrap()).collect();
+            .as_array()
+            .unwrap()
+            .iter()
+            .map(|v| v.as_str().unwrap())
+            .collect();
         assert_eq!(pkce, vec!["S256"], "never advertise plain");
     }
 

@@ -11,10 +11,7 @@ pub struct Page {
 const DEFAULT_COUNT: usize = 100;
 const MAX_COUNT: usize = 500;
 
-pub fn parse_page(
-    start_index: Option<&str>,
-    count: Option<&str>,
-) -> Result<Page, ScimError> {
+pub fn parse_page(start_index: Option<&str>, count: Option<&str>) -> Result<Page, ScimError> {
     let start_index = match start_index {
         None => 1,
         Some(s) => {

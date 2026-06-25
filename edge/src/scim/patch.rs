@@ -44,10 +44,8 @@ fn apply_one(root: &mut Value, op: &NormalizedOp) -> Result<(), ScimError> {
             let value = op.value.clone().ok_or_else(|| {
                 ScimError::bad_request(ScimErrorType::InvalidValue, "op requires a value")
             })?;
-            if path == "members" {
-                if matches!(op.kind, PatchOpKind::Add) {
-                    return add_members(root, &value);
-                }
+            if path == "members" && matches!(op.kind, PatchOpKind::Add) {
+                return add_members(root, &value);
             }
             let coerced = coerce_attr(path, &value);
             set_path(root, path, coerced)
@@ -275,15 +273,19 @@ mod tests {
         )
         .unwrap();
         let vals: Vec<&str> = patched["members"]
-            .as_array().unwrap().iter()
-            .filter_map(|m| m["value"].as_str()).collect();
+            .as_array()
+            .unwrap()
+            .iter()
+            .filter_map(|m| m["value"].as_str())
+            .collect();
         assert_eq!(vals, vec!["u1", "u2"]);
     }
 
     #[test]
     fn group_member_remove_value_path_form() {
         // Okta form: members[value eq "u1"].
-        let group = json!({ "displayName": "g", "members": [{ "value": "u1" }, { "value": "u2" }] });
+        let group =
+            json!({ "displayName": "g", "members": [{ "value": "u1" }, { "value": "u2" }] });
         let patched = apply_patch(
             &group,
             &ops(json!({ "Operations": [
@@ -292,8 +294,11 @@ mod tests {
         )
         .unwrap();
         let vals: Vec<&str> = patched["members"]
-            .as_array().unwrap().iter()
-            .filter_map(|m| m["value"].as_str()).collect();
+            .as_array()
+            .unwrap()
+            .iter()
+            .filter_map(|m| m["value"].as_str())
+            .collect();
         assert_eq!(vals, vec!["u2"]);
     }
 
@@ -311,8 +316,11 @@ mod tests {
         )
         .unwrap();
         let vals: Vec<&str> = patched["members"]
-            .as_array().unwrap().iter()
-            .filter_map(|m| m["value"].as_str()).collect();
+            .as_array()
+            .unwrap()
+            .iter()
+            .filter_map(|m| m["value"].as_str())
+            .collect();
         assert_eq!(vals, vec!["u2"]); // only u1, u3 removed
     }
 

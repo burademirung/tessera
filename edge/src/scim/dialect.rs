@@ -95,7 +95,10 @@ mod tests {
         });
         let ops = normalize_patch(&body).unwrap();
         assert_eq!(ops[0].kind, PatchOpKind::Replace);
-        assert_eq!(coerce_active(&ops[0].value.as_ref().unwrap()["active"]), Some(false));
+        assert_eq!(
+            coerce_active(&ops[0].value.as_ref().unwrap()["active"]),
+            Some(false)
+        );
     }
 
     #[test]
@@ -107,7 +110,10 @@ mod tests {
         });
         let ops = normalize_patch(&body).unwrap();
         assert!(ops[0].path.is_none());
-        assert_eq!(coerce_active(&ops[0].value.as_ref().unwrap()["active"]), Some(false));
+        assert_eq!(
+            coerce_active(&ops[0].value.as_ref().unwrap()["active"]),
+            Some(false)
+        );
     }
 
     #[test]

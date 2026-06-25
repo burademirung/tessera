@@ -154,28 +154,50 @@ mod tests {
 
     const NOW: u64 = 1_750_000_000;
 
-    fn make_proof(htm: &str, htu: &str, iat: u64, jti: &str, ath: Option<&str>) -> (String, String) {
+    fn make_proof(
+        htm: &str,
+        htu: &str,
+        iat: u64,
+        jti: &str,
+        ath: Option<&str>,
+    ) -> (String, String) {
         let sk = SigningKey::from_bytes(&[9u8; 32]);
         let x = b64url_encode(sk.verifying_key().as_bytes());
         let jwk = json!({ "kty": "OKP", "crv": "Ed25519", "x": x });
         let jkt = jwk_thumbprint_rfc7638(&jwk).unwrap();
         let header = json!({ "typ": "dpop+jwt", "alg": "EdDSA", "jwk": jwk });
         let mut claims = json!({ "htm": htm, "htu": htu, "iat": iat, "jti": jti });
-        if let Some(a) = ath { claims["ath"] = json!(a); }
+        if let Some(a) = ath {
+            claims["ath"] = json!(a);
+        }
         let h = b64url_encode(serde_json::to_vec(&header).unwrap().as_slice());
         let p = b64url_encode(serde_json::to_vec(&claims).unwrap().as_slice());
         let signing_input = format!("{h}.{p}");
         let sig = sk.sign(signing_input.as_bytes());
-        (format!("{signing_input}.{}", b64url_encode(&sig.to_bytes())), jkt)
+        (
+            format!("{signing_input}.{}", b64url_encode(&sig.to_bytes())),
+            jkt,
+        )
     }
 
     fn params() -> DpopParams {
-        DpopParams { htm: "POST".into(), htu: "https://idp.lifecycle.example/token".into(), max_iat_skew: 60, expected_ath: None }
+        DpopParams {
+            htm: "POST".into(),
+            htu: "https://idp.lifecycle.example/token".into(),
+            max_iat_skew: 60,
+            expected_ath: None,
+        }
     }
 
     #[test]
     fn accepts_a_valid_proof_and_returns_jkt() {
-        let (proof, jkt) = make_proof("POST", "https://idp.lifecycle.example/token", NOW, "jti-1", None);
+        let (proof, jkt) = make_proof(
+            "POST",
+            "https://idp.lifecycle.example/token",
+            NOW,
+            "jti-1",
+            None,
+        );
         let mut never = |_: &str| false;
         let got = verify_dpop(&proof, &params(), NOW, &mut never).unwrap();
         assert_eq!(got, jkt);
@@ -185,8 +207,10 @@ mod tests {
     fn rejects_wrong_typ() {
         let sk = ed25519_dalek::SigningKey::from_bytes(&[9u8; 32]);
         let x = b64url_encode(sk.verifying_key().as_bytes());
-        let header = json!({ "typ": "jwt", "alg": "EdDSA", "jwk": { "kty":"OKP","crv":"Ed25519","x": x } });
-        let claims = json!({ "htm":"POST","htu":"https://idp.lifecycle.example/token","iat":NOW,"jti":"j" });
+        let header =
+            json!({ "typ": "jwt", "alg": "EdDSA", "jwk": { "kty":"OKP","crv":"Ed25519","x": x } });
+        let claims =
+            json!({ "htm":"POST","htu":"https://idp.lifecycle.example/token","iat":NOW,"jti":"j" });
         let h = b64url_encode(serde_json::to_vec(&header).unwrap().as_slice());
         let p = b64url_encode(serde_json::to_vec(&claims).unwrap().as_slice());
         use ed25519_dalek::Signer;
@@ -207,14 +231,26 @@ mod tests {
 
     #[test]
     fn rejects_stale_iat() {
-        let (proof, _) = make_proof("POST", "https://idp.lifecycle.example/token", NOW - 1000, "j", None);
+        let (proof, _) = make_proof(
+            "POST",
+            "https://idp.lifecycle.example/token",
+            NOW - 1000,
+            "j",
+            None,
+        );
         let mut never = |_: &str| false;
         assert!(verify_dpop(&proof, &params(), NOW, &mut never).is_err());
     }
 
     #[test]
     fn rejects_replayed_jti() {
-        let (proof, _) = make_proof("POST", "https://idp.lifecycle.example/token", NOW, "dup", None);
+        let (proof, _) = make_proof(
+            "POST",
+            "https://idp.lifecycle.example/token",
+            NOW,
+            "dup",
+            None,
+        );
         let mut always = |_: &str| true; // jti already seen
         assert!(verify_dpop(&proof, &params(), NOW, &mut always).is_err());
     }
@@ -223,10 +259,22 @@ mod tests {
     fn enforces_ath_when_expected() {
         let mut p = params();
         p.expected_ath = Some("expected-hash".into());
-        let (proof_no_ath, _) = make_proof("POST", "https://idp.lifecycle.example/token", NOW, "j", None);
+        let (proof_no_ath, _) = make_proof(
+            "POST",
+            "https://idp.lifecycle.example/token",
+            NOW,
+            "j",
+            None,
+        );
         let mut never = |_: &str| false;
         assert!(verify_dpop(&proof_no_ath, &p, NOW, &mut never).is_err());
-        let (proof_ath, _) = make_proof("POST", "https://idp.lifecycle.example/token", NOW, "j2", Some("expected-hash"));
+        let (proof_ath, _) = make_proof(
+            "POST",
+            "https://idp.lifecycle.example/token",
+            NOW,
+            "j2",
+            Some("expected-hash"),
+        );
         assert!(verify_dpop(&proof_ath, &p, NOW, &mut never).is_ok());
     }
 

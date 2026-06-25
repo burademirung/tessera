@@ -95,7 +95,14 @@ mod tests {
     fn signed_internal_token_verifies_with_our_verifier() {
         let s = signer();
         let token = s
-            .sign_internal("user-9", "https://idp.lifecycle.example", "lifecycle-internal", NOW, 600, "at+jwt")
+            .sign_internal(
+                "user-9",
+                "https://idp.lifecycle.example",
+                "lifecycle-internal",
+                NOW,
+                600,
+                "at+jwt",
+            )
             .unwrap();
         let pub_pem = s.verifying.to_public_key_pem(Default::default()).unwrap();
         let dk = DecodingKey::from_ed_pem(pub_pem.as_bytes()).unwrap();
@@ -119,15 +126,25 @@ mod tests {
         assert_eq!(jwk["use"], "sig");
         assert_eq!(jwk["alg"], "EdDSA");
         assert_eq!(jwk["kid"], "int-2026-06");
-        assert!(jwk["x"].as_str().unwrap().len() > 0);
-        assert!(jwk.get("d").is_none(), "private key must never be published");
+        assert!(!jwk["x"].as_str().unwrap().is_empty());
+        assert!(
+            jwk.get("d").is_none(),
+            "private key must never be published"
+        );
     }
 
     #[test]
     fn token_carries_kid_in_header() {
         let s = signer();
         let token = s
-            .sign_internal("u", "https://idp.lifecycle.example", "lifecycle-internal", NOW, 600, "at+jwt")
+            .sign_internal(
+                "u",
+                "https://idp.lifecycle.example",
+                "lifecycle-internal",
+                NOW,
+                600,
+                "at+jwt",
+            )
             .unwrap();
         let header = jsonwebtoken::decode_header(&token).unwrap();
         assert_eq!(header.kid.as_deref(), Some("int-2026-06"));

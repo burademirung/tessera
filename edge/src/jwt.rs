@@ -174,7 +174,10 @@ mod tests {
         use ed25519_dalek::pkcs8::EncodePrivateKey;
         let sk = SigningKey::from_bytes(&[7u8; 32]);
         let priv_pem = sk.to_pkcs8_pem(Default::default()).unwrap();
-        let pub_pem = sk.verifying_key().to_public_key_pem(Default::default()).unwrap();
+        let pub_pem = sk
+            .verifying_key()
+            .to_public_key_pem(Default::default())
+            .unwrap();
         (
             EncodingKey::from_ed_pem(priv_pem.as_bytes()).unwrap(),
             DecodingKey::from_ed_pem(pub_pem.as_bytes()).unwrap(),

@@ -157,7 +157,9 @@ impl Parser {
                 _ => Err(invalid("eq requires a quoted value")),
             },
             Some(Tok::Pr) => Ok(FilterExpr::Present { attr }),
-            _ => Err(invalid("unsupported operator (only eq, pr, and are allowed)")),
+            _ => Err(invalid(
+                "unsupported operator (only eq, pr, and are allowed)",
+            )),
         }
     }
 }
@@ -167,7 +169,11 @@ pub fn parse_filter(input: &str) -> Result<FilterExpr, ScimError> {
     if toks.is_empty() {
         return Err(invalid("empty filter"));
     }
-    let mut p = Parser { toks, pos: 0, depth: 0 };
+    let mut p = Parser {
+        toks,
+        pos: 0,
+        depth: 0,
+    };
     let expr = p.parse_expr()?;
     if p.pos != p.toks.len() {
         return Err(invalid("trailing tokens in filter"));
@@ -230,7 +236,10 @@ mod tests {
         let e = parse_filter("userName eq \"bjensen@example.com\"").unwrap();
         assert_eq!(
             e,
-            FilterExpr::Eq { attr: "userName".into(), value: "bjensen@example.com".into() }
+            FilterExpr::Eq {
+                attr: "userName".into(),
+                value: "bjensen@example.com".into()
+            }
         );
     }
 

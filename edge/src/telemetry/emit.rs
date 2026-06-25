@@ -26,20 +26,67 @@ pub fn build_event(
 /// `seq0` is the first id; `now_ms` stamps every event.
 pub fn demo_sequence(seq0: u64, now_ms: u64) -> Vec<TelemetryEvent> {
     let steps: [(&str, Option<&str>, TelemetryPhase, &str); 8] = [
-        ("idp", Some("idp-edge"), TelemetryPhase::Request, "OIDC authorize"),
-        ("edge", Some("idp-edge"), TelemetryPhase::Authn, "OIDC code exchange"),
-        ("opa", Some("edge-opa"), TelemetryPhase::Authz, "policy decision allow"),
-        ("control", Some("edge-control"), TelemetryPhase::Lifecycle, "lifecycle event written"),
-        ("aws", Some("edge-aws"), TelemetryPhase::Federation, "STS federation"),
-        ("azure", Some("edge-azure"), TelemetryPhase::Federation, "FIC federation"),
-        ("gcp", Some("edge-gcp"), TelemetryPhase::Federation, "WIF federation"),
-        ("edge", None, TelemetryPhase::Complete, "session established"),
+        (
+            "idp",
+            Some("idp-edge"),
+            TelemetryPhase::Request,
+            "OIDC authorize",
+        ),
+        (
+            "edge",
+            Some("idp-edge"),
+            TelemetryPhase::Authn,
+            "OIDC code exchange",
+        ),
+        (
+            "opa",
+            Some("edge-opa"),
+            TelemetryPhase::Authz,
+            "policy decision allow",
+        ),
+        (
+            "control",
+            Some("edge-control"),
+            TelemetryPhase::Lifecycle,
+            "lifecycle event written",
+        ),
+        (
+            "aws",
+            Some("edge-aws"),
+            TelemetryPhase::Federation,
+            "STS federation",
+        ),
+        (
+            "azure",
+            Some("edge-azure"),
+            TelemetryPhase::Federation,
+            "FIC federation",
+        ),
+        (
+            "gcp",
+            Some("edge-gcp"),
+            TelemetryPhase::Federation,
+            "WIF federation",
+        ),
+        (
+            "edge",
+            None,
+            TelemetryPhase::Complete,
+            "session established",
+        ),
     ];
     steps
         .iter()
         .enumerate()
         .map(|(i, (node, edge, phase, label))| {
-            build_event(seq0 + i as u64, now_ms + i as u64, node, *edge, *phase, label)
+            build_event(
+                seq0 + i as u64,
+                now_ms + i as u64,
+                node,
+                *edge,
+                *phase,
+                label,
+            )
         })
         .collect()
 }

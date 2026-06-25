@@ -116,8 +116,12 @@ mod tests {
     fn resource_types_lists_user_and_group() {
         let v = resource_types();
         assert_eq!(v["totalResults"], json!(2));
-        let ids: Vec<&str> = v["Resources"].as_array().unwrap().iter()
-            .map(|r| r["id"].as_str().unwrap()).collect();
+        let ids: Vec<&str> = v["Resources"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .map(|r| r["id"].as_str().unwrap())
+            .collect();
         assert!(ids.contains(&"User"));
         assert!(ids.contains(&"Group"));
     }
@@ -126,8 +130,12 @@ mod tests {
     fn schemas_lists_three_with_enterprise_urn() {
         let v = schemas();
         assert_eq!(v["totalResults"], json!(3));
-        let ids: Vec<&str> = v["Resources"].as_array().unwrap().iter()
-            .map(|r| r["id"].as_str().unwrap()).collect();
+        let ids: Vec<&str> = v["Resources"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .map(|r| r["id"].as_str().unwrap())
+            .collect();
         assert!(ids.contains(&SCHEMA_ENTERPRISE));
     }
 
