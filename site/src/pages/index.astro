@@ -1,0 +1,43 @@
+---
+import Base from '../layouts/Base.astro';
+import { IdentityGraph } from '../components/IdentityGraph';
+---
+<Base title="Lifecycle — Identity Engine" description="A working identity engine: OIDC/SAML/SCIM at the edge, policy-as-code, and live multi-cloud federation.">
+  <main>
+    <section style="display:grid; gap:var(--space-3);">
+      <p style="color:var(--color-accent); margin:0; font-weight:600; letter-spacing:0.02em;">LIFECYCLE</p>
+      <h1 style="font-size:clamp(2rem, 5vw, 3.25rem); line-height:1.1; margin:0;">
+        An identity engine you can watch work.
+      </h1>
+      <p style="color:var(--color-muted); font-size:1.125rem;">
+        OIDC, SAML and SCIM at the edge. Policy-as-code with OPA. Live, keyless
+        federation into AWS, Azure and GCP. Every technology real and running.
+      </p>
+      <figure style="margin:var(--space-3) 0; background:var(--color-surface); border:1px solid var(--color-border); border-radius:var(--radius); box-shadow:var(--shadow-2); padding:var(--space-3);">
+        <IdentityGraph client:only="react" posterSrc="/poster.svg">
+          {/* slot="fallback": rendered on the server, shown until the island hydrates.
+              This eager <img> is the LCP element (canvas/SVG are never LCP candidates).
+              Plain eager <img> (not Astro <Image>) because the asset lives in /public.
+              The box is reserved via aspect-ratio so swapping to the live graph is CLS 0. */}
+          <img
+            slot="fallback"
+            src="/poster.svg"
+            alt="Identity flow graph (static)"
+            width={800}
+            height={420}
+            fetchpriority="high"
+            loading="eager"
+            decoding="sync"
+            style="display:block; width:100%; height:auto; aspect-ratio:800 / 420;"
+          />
+        </IdentityGraph>
+        <figcaption style="color:var(--color-muted); font-size:0.9rem; margin-top:var(--space-2);">
+          The whole solution: an identity flows from the IdP through the edge engine and policy, into the control plane and the three clouds.
+        </figcaption>
+      </figure>
+      <a href="#" style="justify-self:start; background:var(--color-accent); color:#fff; text-decoration:none; padding:var(--space-1) var(--space-3); border-radius:var(--radius); font-weight:600;">
+        Explore the architecture
+      </a>
+    </section>
+  </main>
+</Base>
