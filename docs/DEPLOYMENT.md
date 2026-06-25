@@ -362,19 +362,16 @@ entrypoint (`build/worker/shim.mjs`), compatibility date (`2026-06-01`), and
 all bindings. No additional flags are required if the IDs were filled in
 during step 3.
 
-On success Wrangler prints the deployed URL, typically:
-`https://lifecycle-edge.<your-subdomain>.workers.dev`
+On success Wrangler prints the deployed URL. The engine is served on its production hostname `https://api.tessera.degenito.ai` once the custom domain is attached (step 8).
 
 ---
 
 ## 6. Verify Endpoints
 
-Once deployed (before attaching the custom domain, use the `.workers.dev` URL):
+Verify against the engines production hostname:
 
 ```sh
-BASE="https://lifecycle-edge.<your-subdomain>.workers.dev"
-# Or after domain attachment:
-BASE="https://tessera.degenito.ai"
+BASE="https://api.tessera.degenito.ai"
 
 # JWKS — must return a JSON object with a "keys" array
 curl -sf "$BASE/jwks" | jq .
@@ -426,7 +423,7 @@ pnpm exec wrangler pages deploy \
 ## 8. Attach Custom Domain
 
 Attach `tessera.degenito.ai` to the Worker so that it serves on the production
-hostname rather than the `.workers.dev` subdomain.
+hostname.
 
 ### Via Dashboard
 

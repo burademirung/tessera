@@ -1062,7 +1062,7 @@ jobs:
           WRANGLER_OUT: ${{ steps.wrangler.outputs.command-output }}
         run: |
           # Route untrusted/dynamic output via env, never inline
-          URL="https://pr-${PR_NUMBER}.lifecycle-edge.workers.dev"
+          URL="https://pr-${PR_NUMBER}.tessera.degenito.ai"
           echo "url=${URL}" >> "$GITHUB_OUTPUT"
       - name: Post preview URL comment
         uses: actions/github-script@60a0d83039c74a4aee543508d2ffcb1c3799cdea # v7.0.1
