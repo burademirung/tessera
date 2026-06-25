@@ -1,0 +1,21 @@
+---
+interface Standard { name: string; rfc?: string; url: string }
+interface Props { standards: Standard[] }
+const { standards } = Astro.props;
+---
+<dl class="standards">
+  {standards.map((s) => (
+    <div class="standards__row">
+      <dt>{s.name}{s.rfc ? <span class="standards__rfc"> · {s.rfc}</span> : null}</dt>
+      <dd><a href={s.url} rel="noopener noreferrer">{s.url}</a></dd>
+    </div>
+  ))}
+</dl>
+<style>
+  .standards { margin: 0; display: grid; gap: var(--space-1); }
+  .standards__row { display: grid; gap: 2px; padding: var(--space-1) 0; border-bottom: 1px solid var(--color-border); }
+  .standards dt { font-weight: 600; }
+  .standards__rfc { color: var(--color-muted); font-weight: 400; }
+  .standards dd { margin: 0; }
+  .standards a { color: var(--color-accent); word-break: break-all; }
+</style>

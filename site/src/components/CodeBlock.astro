@@ -1,0 +1,73 @@
+---
+import { Code } from 'astro:components';
+interface Props { code: string; lang: string; label: string }
+const { code, lang, label } = Astro.props;
+---
+<figure class="codeblock">
+  <figcaption class="codeblock__bar">
+    <span class="codeblock__lang">{lang}</span>
+    <button type="button" class="codeblock__copy" data-code={code} aria-describedby="copy-status">
+      Copy
+    </button>
+    <span id="copy-status" class="visually-hidden" role="status" aria-live="polite"></span>
+  </figcaption>
+  <div class="codeblock__pre" tabindex="0" aria-label={label}>
+    <Code code={code} lang={lang as any} theme="github-light" />
+  </div>
+</figure>
+
+<style>
+  .codeblock {
+    margin: var(--space-2) 0;
+    border: 1px solid var(--color-border);
+    border-radius: var(--radius);
+    overflow: hidden;
+    background: var(--color-surface);
+    box-shadow: var(--shadow-1);
+  }
+  .codeblock__bar {
+    display: flex; align-items: center; gap: var(--space-2);
+    padding: var(--space-1) var(--space-2);
+    border-bottom: 1px solid var(--color-border);
+  }
+  .codeblock__lang { font-size: 0.8rem; color: var(--color-muted); letter-spacing: 0.04em; text-transform: uppercase; }
+  .codeblock__copy {
+    margin-left: auto; font: inherit; font-size: 0.85rem;
+    background: var(--color-bg); color: var(--color-text);
+    border: 1px solid var(--color-border); border-radius: 8px;
+    padding: 4px 12px; cursor: pointer;
+    transition: background var(--dur-standard) var(--ease-standard);
+  }
+  .codeblock__copy:hover { background: var(--color-surface); }
+  .codeblock__copy[data-copied='true'] { color: var(--color-accent); border-color: var(--color-accent); }
+  .codeblock__pre { overflow-x: auto; }
+  .codeblock__pre :global(pre) { margin: 0; padding: var(--space-2); }
+  .visually-hidden {
+    position: absolute; width: 1px; height: 1px; padding: 0; margin: -1px;
+    overflow: hidden; clip: rect(0 0 0 0); white-space: nowrap; border: 0;
+  }
+</style>
+
+<script>
+  // Progressive enhancement only: code is fully present without JS.
+  document.querySelectorAll<HTMLButtonElement>('.codeblock__copy').forEach((btn) => {
+    btn.addEventListener('click', async () => {
+      const code = btn.dataset.code ?? '';
+      try {
+        await navigator.clipboard.writeText(code);
+        const status = btn.parentElement?.querySelector<HTMLElement>('[role="status"]');
+        btn.dataset.copied = 'true';
+        btn.textContent = 'Copied';
+        if (status) status.textContent = 'Code copied to clipboard';
+        window.setTimeout(() => {
+          btn.dataset.copied = 'false';
+          btn.textContent = 'Copy';
+          if (status) status.textContent = '';
+        }, 2000);
+      } catch {
+        const status = btn.parentElement?.querySelector<HTMLElement>('[role="status"]');
+        if (status) status.textContent = 'Copy failed; select the code manually';
+      }
+    });
+  });
+</script>

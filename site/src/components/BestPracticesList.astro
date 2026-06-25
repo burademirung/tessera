@@ -1,0 +1,19 @@
+---
+interface Item { claim: string; sourceUrl: string }
+interface Props { items: Item[] }
+const { items } = Astro.props;
+---
+<ul class="practices">
+  {items.map((i) => (
+    <li>
+      <span>{i.claim}</span>
+      {' '}
+      <a class="practices__src" href={i.sourceUrl} rel="noopener noreferrer">source</a>
+    </li>
+  ))}
+</ul>
+<style>
+  .practices { margin: 0; padding-left: var(--space-2); display: grid; gap: var(--space-1); }
+  .practices li { max-width: var(--measure); }
+  .practices__src { color: var(--color-accent); font-size: 0.85rem; }
+</style>

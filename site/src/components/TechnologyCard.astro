@@ -1,0 +1,21 @@
+---
+interface Props { id: string; name: string; tagline: string }
+const { id, name, tagline } = Astro.props;
+---
+<a class="techcard" href={`/standards/${id}`}>
+  <h3 class="techcard__name">{name}</h3>
+  <p class="techcard__tag">{tagline}</p>
+</a>
+<style>
+  .techcard {
+    display: block; text-decoration: none; color: inherit;
+    background: var(--color-surface); border: 1px solid var(--color-border);
+    border-radius: var(--radius); padding: var(--space-3);
+    box-shadow: var(--shadow-1);
+    transition: box-shadow var(--dur-standard) var(--ease-standard), transform var(--dur-standard) var(--ease-standard);
+  }
+  .techcard:hover { box-shadow: var(--shadow-2); transform: translateY(-2px); }
+  .techcard__name { margin: 0 0 var(--space-1); font-size: 1.1rem; }
+  .techcard__tag { margin: 0; color: var(--color-muted); font-size: 0.95rem; }
+  @media (prefers-reduced-motion: reduce) { .techcard:hover { transform: none; } }
+</style>
