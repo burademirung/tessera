@@ -38,5 +38,12 @@
   ],
   "kv_namespaces": [
     { "binding": "JWKS_CACHE", "id": "PLACEHOLDER_REPLACE_BEFORE_DEPLOY" }
-  ]
+  ],
+  // Phase-7: live telemetry. The auth path publishes TelemetryEvents here
+  // (fail-open, observability only); a DO aggregator fans them out over SSE.
+  "queues": {
+    "producers": [
+      { "binding": "TELEMETRY_QUEUE", "queue": "lifecycle-telemetry" }
+    ]
+  }
 }
