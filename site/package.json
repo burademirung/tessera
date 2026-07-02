@@ -38,7 +38,7 @@
     "@playwright/test": "^1.61.1",
     "@testing-library/jest-dom": "^6.9.1",
     "@testing-library/react": "^16.3.2",
-    "@types/node": "^26.0.1",
+    "@types/node": "^26.1.0",
     "@types/three": "^0.184.1",
     "@vitejs/plugin-react": "^6.0.3",
     "gray-matter": "^4.0.3",
